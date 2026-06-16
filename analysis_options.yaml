@@ -1,0 +1,10 @@
+include: package:flutter_lints/flutter.yaml
+analyzer:
+  errors:
+    # The relocated integration doc comments use <Class>, <bool>, <k>=<v>, and
+    # List<dynamic> as descriptive placeholders, not HTML. Mirrors magic's own
+    # analysis_options (these files were extracted from magic verbatim).
+    unintended_html_in_doc_comment: ignore
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options
