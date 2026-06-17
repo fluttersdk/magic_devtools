@@ -16,15 +16,6 @@ dependencies:
   fluttersdk_dusk: ^0.0.7
   fluttersdk_telescope: ^0.0.4
 
-# version pins replace the path overrides at publish (user-owned)
-dependency_overrides:
-  magic:
-    path: ../magic
-  fluttersdk_dusk:
-    path: ../dusk
-  fluttersdk_telescope:
-    path: ../telescope
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
