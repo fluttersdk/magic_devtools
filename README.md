@@ -41,7 +41,7 @@ It is a dev tool, not a runtime dependency, so it belongs under `dev_dependencie
 ```yaml
 dev_dependencies:
   magic_devtools: ^0.0.1
-  fluttersdk_dusk: ^0.0.7        # add if you use dusk
+  fluttersdk_dusk: ^0.0.8        # add if you use dusk
   fluttersdk_telescope: ^0.0.4   # add if you use telescope
 ```
 
