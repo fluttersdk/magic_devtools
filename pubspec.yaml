@@ -12,8 +12,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^1.0.0-alpha.15
-  fluttersdk_dusk: ^0.0.7
+  magic: ^0.0.3
+  fluttersdk_dusk: ^0.0.8
   fluttersdk_telescope: ^0.0.4
 
 dev_dependencies:
