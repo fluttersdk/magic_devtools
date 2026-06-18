@@ -36,10 +36,10 @@ Two import barrels:
 
 ## Install
 
-It is a dev tool, not a runtime dependency, so it belongs under `dev_dependencies`:
+`magic_devtools` and the tooling packages are imported in `lib/main.dart` (under `kDebugMode`), so they are regular `dependencies`, not `dev_dependencies` — `kDebugMode` tree-shakes them out of release builds, and because `lib/` imports them a `dev_dependencies` entry would trip the `depend_on_referenced_packages` lint. This matches how `fluttersdk_dusk` and `fluttersdk_telescope` are installed on their own.
 
 ```yaml
-dev_dependencies:
+dependencies:
   magic_devtools: ^0.0.1
   fluttersdk_dusk: ^0.0.8        # add if you use dusk
   fluttersdk_telescope: ^0.0.4   # add if you use telescope
