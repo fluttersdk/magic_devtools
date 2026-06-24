@@ -18,7 +18,10 @@ import 'package:magic/magic.dart';
 ///
 /// Adds fourteen enrichers to [DuskPlugin.enrichers] (in insertion order;
 /// later enrichers see the same Element, first-write-wins on overlapping
-/// keys per oracle finding #3 contract):
+/// keys per oracle finding #3 contract) and registers one navigate adapter
+/// via [DuskPlugin.registerNavigateAdapter] so `ext.dusk.navigate --route`
+/// drives GoRouter through [MagicRouter] instead of falling back to the
+/// [SystemNavigator] broadcast:
 ///
 /// 1. [magicFormEnricher] — `magicFormField: <name>` for elements backed
 ///    by a [MagicFormData] text controller.
@@ -77,7 +80,11 @@ class MagicDuskIntegration {
   /// (echoConnection, gateResultsAll) land at slots 9 and 10, and the
   /// three Step-1.3 telescope-bridge enrichers (recentHttp, recentLogs,
   /// recentExceptions) land at slots 11, 12, 13 so any first-write-wins
-  /// overlap stays deterministic across versions.
+  /// overlap stays deterministic across versions. After enricher
+  /// registration, one navigate adapter is wired via
+  /// [DuskPlugin.registerNavigateAdapter] so `ext.dusk.navigate --route`
+  /// drives [MagicRouter.instance.to] (path-based) instead of falling
+  /// back to the [SystemNavigator] broadcast.
   static void install() {
     if (_installed) return;
     _installed = true;
@@ -116,11 +123,28 @@ class MagicDuskIntegration {
         (state) => _lastEchoState = _connectionStateName(state),
       );
     }
+
+    // 7. Register the navigate adapter so `ext.dusk.navigate --route <path>`
+    //    drives GoRouter through MagicRouter instead of falling back to the
+    //    SystemNavigator broadcast (which GoRouter does not listen to).
+    //
+    //    The adapter uses MagicRouter.instance.to(route) (path-based navigation,
+    //    NOT .toNamed) because the dusk `--route` argument is a URL path. A
+    //    null router instance (not yet initialised) throws StateError; we catch
+    //    it and return false so dusk can fall back to the platform broadcast.
+    DuskPlugin.registerNavigateAdapter((String route) async {
+      try {
+        MagicRouter.instance.to(route);
+        return true;
+      } on StateError {
+        return false;
+      }
+    });
   }
 
   /// Test-only reset. Drops all fourteen enrichers from
-  /// [DuskPlugin.enrichers], cancels the Echo connection-state
-  /// subscription, and clears the idempotency guard.
+  /// [DuskPlugin.enrichers], clears the navigate adapter, cancels the Echo
+  /// connection-state subscription, and clears the idempotency guard.
   @visibleForTesting
   static void resetForTesting() {
     DuskPlugin.enrichers.remove(magicFormEnricher);
@@ -137,6 +161,7 @@ class MagicDuskIntegration {
     DuskPlugin.enrichers.remove(magicRecentHttpEnricher);
     DuskPlugin.enrichers.remove(magicRecentLogsEnricher);
     DuskPlugin.enrichers.remove(magicRecentExceptionsEnricher);
+    DuskPlugin.registerNavigateAdapter(null);
     _echoSubscription?.cancel();
     _echoSubscription = null;
     _lastEchoState = null;
