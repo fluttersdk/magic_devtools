@@ -15,6 +15,7 @@ dependencies:
   magic: ^0.0.3
   fluttersdk_dusk: ^0.0.8
   fluttersdk_telescope: ^0.0.4
+  fluttersdk_wind: ^1.1.2
 
 dev_dependencies:
   flutter_test:

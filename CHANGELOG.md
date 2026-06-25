@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `MagicPreview` framework: a dev-only component preview catalog hosted behind a
+  `/preview` ShellRoute. New `package:magic_devtools/preview.dart` barrel exports
+  the `PreviewEntry` contract (`label`, `slug`, `builder`), the
+  `MagicPreviewCatalog` widget (sidebar nav plus a light/dark pair per preview,
+  with a global theme toggle bound to wind's `WindTheme.of(context).toggleTheme()`),
+  and the `MagicPreview` registration entrypoint (`register` plus `registerRoutes`).
+  The route, catalog, and every registered `PreviewEntry` are reachable only
+  through `MagicPreview.registerRoutes`, which is guarded by `kReleaseMode` plus
+  `const bool.fromEnvironment('PREVIEW_ENABLED', defaultValue: kDebugMode)`, so
+  the whole surface const-folds dead and tree-shakes out of release builds.
+  Entries are held in a function-scoped list (never a top-level const, the
+  dart-lang/sdk#33920 foot-gun). The generated `_previews.g.dart` (Step 18) feeds
+  a `List<PreviewEntry>` into `MagicPreview.register`. Consumers must call
+  `MagicPreview.registerRoutes()` from a provider `boot()` BEFORE the router locks
+  on first `routerConfig` access, else `/preview` silently never registers.
+- `fluttersdk_wind` is now a direct dependency (the catalog renders on
+  `WDiv`/`WText`/`WAnchor` and binds the theme toggle to `WindThemeController`).
 - `MagicDuskIntegration.install()` now registers a navigate adapter via
   `DuskPlugin.registerNavigateAdapter` so `ext.dusk.navigate --route <path>`
   drives GoRouter through `MagicRouter.instance.to(path)` instead of falling

@@ -29,10 +29,11 @@
 
 It is **debug-only**: you install and wire it under `kDebugMode`, so release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core — the framework keeps no dev-tooling production dependencies.
 
-Two import barrels:
+Three import barrels:
 
 - `package:magic_devtools/dusk.dart` — `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
 - `package:magic_devtools/telescope.dart` — `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
+- `package:magic_devtools/preview.dart` — `MagicPreview` hosts a dev-only component preview catalog behind a `/preview` ShellRoute, tree-shaken from release builds.
 
 ## Install
 
@@ -76,6 +77,29 @@ if (kDebugMode) {
 ```
 
 You can wire either integration on its own, or both together: install each plugin before `Magic.init()` and each Magic integration after it. The `dusk:install` and `telescope:install` Artisan commands wire these blocks into `lib/main.dart` automatically when `magic_devtools` is a dependency.
+
+### Preview catalog
+
+`MagicPreview` hosts a dev-only component preview catalog: a sidebar of registered components next to each preview rendered in BOTH light and dark, with a global theme toggle bound to wind's `WindThemeController`. It is reachable only through `MagicPreview.registerRoutes()`, guarded by `kReleaseMode` plus `const bool.fromEnvironment('PREVIEW_ENABLED', defaultValue: kDebugMode)`, so the route, the catalog, and every registered `PreviewEntry` const-fold dead and tree-shake out of release builds.
+
+The router-lock timing is load-bearing: `MagicRouter` locks its route table on the first `routerConfig` access, so registration MUST happen in a provider `boot()` (which runs during the Magic bootstrap lifecycle, before `MaterialApp` reads `routerConfig`). Register too late and `/preview` silently never appears.
+
+```dart
+class RouteServiceProvider extends ServiceProvider {
+  RouteServiceProvider(super.app);
+
+  @override
+  Future<void> boot() async {
+    registerAppRoutes();
+    if (kDebugMode) {
+      MagicPreview.register(previewEntries()); // from the generated _previews.g.dart
+      MagicPreview.registerRoutes();
+    }
+  }
+}
+```
+
+The `previews:refresh` Artisan command scans `*.preview.dart` files and regenerates `previewEntries()` returning a `List<PreviewEntry>` from a function (never a top-level const, the dart-lang/sdk#33920 retention foot-gun).
 
 ## Ecosystem
 
