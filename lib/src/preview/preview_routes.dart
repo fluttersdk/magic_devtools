@@ -91,9 +91,12 @@ final class MagicPreview {
       layoutId: 'magic-preview',
       layout: (child) => _PreviewShell(entries: entries, child: child),
       routes: () {
-        // Index: /preview shows the first entry.
+        // Index: /preview shows the first entry. The child path is EMPTY (not
+        // '/') so the composed full path is exactly '/preview'; go_router
+        // asserts a route path may not end with '/' (except the root), so a '/'
+        // child here ('/preview/') crashes router configuration at boot.
         MagicRoute.page(
-          '/',
+          '',
           () => const SizedBox.shrink(),
         ).name('magic-preview.index');
 

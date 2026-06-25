@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`/preview` route no longer crashes the app**: the catalog group's index child path was `/` which composed to `/preview/`, tripping go_router's `route path may not end with '/'` assertion and blanking the entire app on every route. Changed the index child path to `''` so the composed path is exactly `/preview`.
+- **Catalog previews now inherit the host theme**: each light/dark pane copied a bare `WindThemeData` that carried no aliases, so component semantic tokens (`text-fg`, `bg-surface`, ...) resolved to no-ops and every preview rendered Flutter's red unstyled-text fallback. Panes now `copyWith(brightness:)` the ambient app theme, preserving aliases and brand colors.
+- **Catalog overflow**: the preview surface now scrolls vertically and each pane scrolls horizontally, so wide variant matrices no longer trigger RenderFlex overflows in the side-by-side light/dark layout.
+
 ### Added
 
 - `MagicPreview` framework: a dev-only component preview catalog hosted behind a

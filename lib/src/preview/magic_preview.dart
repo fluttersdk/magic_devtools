@@ -131,7 +131,13 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
           className: 'flex flex-col flex-1 h-full',
           children: [
             _buildHeader(context),
-            WDiv(className: 'flex-1 p-6', child: _buildPreviewPanes()),
+            // The preview surface scrolls vertically; tall variant matrices do
+            // not overflow the viewport. Each pane scrolls horizontally.
+            Expanded(
+              child: SingleChildScrollView(
+                child: WDiv(className: 'p-6', child: _buildPreviewPanes()),
+              ),
+            ),
           ],
         ),
       ],
@@ -222,6 +228,14 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
 
   /// A single brightness-pinned pane wrapping [entry] in its own [WindTheme].
   Widget _buildPane(PreviewEntry entry, Brightness brightness, String label) {
+    // Inherit the host app's theme (its semantic aliases + brand colors) and
+    // only PIN the brightness. A fresh bare WindThemeData would carry no
+    // aliases, so the components' semantic tokens (text-fg, bg-surface, ...)
+    // would resolve to no-ops and every preview would render Flutter's red
+    // unstyled-text fallback. copyWith keeps the ambient aliases/colors.
+    final WindThemeData paneTheme = WindTheme.of(
+      context,
+    ).data.copyWith(brightness: brightness, syncWithSystem: false);
     return WDiv(
       className: 'flex flex-col flex-1 gap-2',
       children: [
@@ -230,13 +244,18 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
           className: 'text-fg-muted text-xs font-semibold uppercase',
         ),
         WindTheme(
-          // A fresh WindThemeData with a fixed brightness so this pane renders
-          // in [brightness] regardless of the global toggle state.
-          data: WindThemeData(brightness: brightness, syncWithSystem: false),
+          data: paneTheme,
           child: Builder(
-            builder: (paneContext) => WDiv(
-              className: 'p-6 rounded-lg border border-color-border bg-surface',
-              child: entry.builder(paneContext),
+            // The pane scrolls horizontally so a wide variant matrix does not
+            // overflow the half-width pane (the catalog shows light + dark side
+            // by side); vertical scrolling is handled by the outer surface.
+            builder: (paneContext) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: WDiv(
+                className:
+                    'p-6 rounded-lg border border-color-border bg-surface',
+                child: entry.builder(paneContext),
+              ),
             ),
           ),
         ),
