@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import 'magic_preview.dart';
@@ -54,17 +53,18 @@ final class MagicPreview {
     _entries = entries;
   }
 
-  /// Register the `/preview` ShellRoute and its `:component` children.
+  /// Register the `/preview` catalog page and its `/preview/:component` deep
+  /// link.
   ///
   /// ## Router-lock timing (load-bearing)
   ///
   /// [MagicRouter] locks its route table the first time `routerConfig` is
   /// accessed (`MagicRouter.routerConfig` builds the GoRouter and sets
-  /// `_isBuilt`, after which `addRoute`/`addLayout` throw `StateError`). The
-  /// consumer MUST therefore call [registerRoutes] inside a provider `boot()`
-  /// — which runs during the Magic bootstrap lifecycle, BEFORE `MaterialApp`
-  /// reads `MagicRouter.instance.routerConfig` — otherwise the preview shell is
-  /// registered too late and `/preview` silently never appears.
+  /// `_isBuilt`, after which `addRoute` throws `StateError`). The consumer MUST
+  /// therefore call [registerRoutes] inside a provider `boot()` — which runs
+  /// during the Magic bootstrap lifecycle, BEFORE `MaterialApp` reads
+  /// `MagicRouter.instance.routerConfig` — otherwise the routes register too
+  /// late and `/preview` silently never appears.
   ///
   /// ## Release boundary
   ///
@@ -82,61 +82,34 @@ final class MagicPreview {
     //    const list — sdk#33920) so the catalog widget receives them by value.
     final List<PreviewEntry> entries = _entries;
 
-    // 3. The /preview ShellRoute: one persistent catalog shell wrapping an
-    //    index page and one `:component` child page per entry. The shell is the
-    //    catalog itself; child routes drive which entry is active via the
-    //    `component` path parameter.
-    MagicRoute.group(
-      prefix: '/preview',
-      layoutId: 'magic-preview',
-      layout: (child) => _PreviewShell(entries: entries, child: child),
-      routes: () {
-        // Index: /preview shows the first entry. The child path is EMPTY (not
-        // '/') so the composed full path is exactly '/preview'; go_router
-        // asserts a route path may not end with '/' (except the root), so a '/'
-        // child here ('/preview/') crashes router configuration at boot.
-        MagicRoute.page(
-          '',
-          () => const SizedBox.shrink(),
-        ).name('magic-preview.index');
+    // 3. Two plain pages render the catalog DIRECTLY (no persistent shell): the
+    //    index shows the first entry; `/preview/:component` selects an entry by
+    //    its slug. The `:component` builder RECEIVES the slug and rebuilds on
+    //    every navigation, so deep-linking (`/preview/<slug>`) and sidebar
+    //    selection both resolve the right entry. A persistent ShellRoute would
+    //    NOT rebuild when only the child route swapped, leaving the catalog
+    //    stuck on the first entry.
+    MagicRoute.page(
+      '/preview',
+      () => MagicPreviewCatalog(
+        entries: entries,
+        onSelect: (entry) => MagicRoute.to('/preview/${entry.slug}'),
+      ),
+    ).name('magic-preview.index');
 
-        // /preview/:component shows the matching entry; the shell reads the
-        // `component` path parameter to select it.
-        MagicRoute.page('/:component', (String component) {
-          return const SizedBox.shrink();
-        }).name('magic-preview.component');
-      },
-    );
+    MagicRoute.page(
+      '/preview/:component',
+      (String component) => MagicPreviewCatalog(
+        entries: entries,
+        activeSlug: component,
+        onSelect: (entry) => MagicRoute.to('/preview/${entry.slug}'),
+      ),
+    ).name('magic-preview.component');
   }
 
   /// Test-only reset of the registered entries.
   @visibleForTesting
   static void resetForTesting() {
     _entries = const <PreviewEntry>[];
-  }
-}
-
-/// The persistent shell for the `/preview` route group.
-///
-/// The shell IS the catalog: it reads the active `component` path parameter
-/// from the router and renders [MagicPreviewCatalog] over the full entry set.
-/// The nested child page is intentionally empty — the catalog owns the visual
-/// surface; the child only carries the path parameter that selects the entry.
-class _PreviewShell extends StatelessWidget {
-  const _PreviewShell({required this.entries, required this.child});
-
-  final List<PreviewEntry> entries;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    // Read the active `:component` slug from the router and let the catalog
-    // navigate between entries by pushing `/preview/<slug>`.
-    final String? slug = MagicRouter.instance.pathParameters['component'];
-    return MagicPreviewCatalog(
-      entries: entries,
-      activeSlug: slug,
-      onSelect: (entry) => MagicRoute.to('/preview/${entry.slug}'),
-    );
   }
 }

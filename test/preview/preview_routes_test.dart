@@ -63,20 +63,30 @@ void main() {
   });
 
   group('MagicPreview.registerRoutes', () {
-    test('registers a single magic-preview layout in debug builds', () {
+    test('registers the /preview page and the :component deep link', () {
       // In the test runtime kReleaseMode is false and kPreviewEnabled defaults
       // to kDebugMode (true), so the guarded body runs.
       MagicPreview.register(_entries());
       MagicPreview.registerRoutes();
 
-      final layouts = MagicRouter.instance.mergedLayouts;
-      final previewLayouts = layouts
-          .where((l) => l.id == 'magic-preview')
+      final paths = MagicRouter.instance.routes
+          .map((RouteDefinition r) => r.fullPath)
           .toList();
 
-      expect(previewLayouts, hasLength(1));
-      // The shell wraps an index page plus one `:component` child page.
-      expect(previewLayouts.single.children, hasLength(2));
+      // Two plain pages render the catalog directly (no persistent shell): the
+      // index and the slug deep link. The :component builder rebuilds on nav so
+      // direct navigation to /preview/<slug> selects the right entry.
+      expect(paths, contains('/preview'));
+      expect(paths, contains('/preview/:component'));
+
+      // Regression guard for the boot crash: go_router asserts a route path may
+      // not end with '/' (except the root). A '/preview/' here blanks the whole
+      // app at router-config build time.
+      expect(
+        paths.where((String p) => p != '/' && p.endsWith('/')),
+        isEmpty,
+        reason: 'no registered route path may end with "/"',
+      );
     });
 
     test('registers before the router locks (no StateError)', () {
