@@ -1594,6 +1594,83 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // navigate adapter (Step 5)
+  // ---------------------------------------------------------------------------
+
+  group('MagicDuskIntegration navigate adapter', () {
+    test('install() registers a non-null navigate adapter', () {
+      expect(DuskPlugin.navigateAdapter, isNull);
+
+      MagicDuskIntegration.install();
+
+      expect(DuskPlugin.navigateAdapter, isNotNull);
+    });
+
+    test('resetForTesting() clears the navigate adapter', () {
+      MagicDuskIntegration.install();
+      expect(DuskPlugin.navigateAdapter, isNotNull);
+
+      MagicDuskIntegration.resetForTesting();
+
+      expect(DuskPlugin.navigateAdapter, isNull);
+    });
+
+    testWidgets(
+      'adapter returns true and navigates via MagicRouter.instance.to on a valid path',
+      (tester) async {
+        // 1. Wire up a real GoRouter-backed MagicRouter with two known routes.
+        MagicRoute.page('/', () => const SizedBox());
+        MagicRoute.page('/dashboard', () => const SizedBox());
+
+        await tester.pumpWidget(
+          MaterialApp.router(routerConfig: MagicRouter.instance.routerConfig),
+        );
+        await tester.pumpAndSettle();
+
+        // 2. Install the integration — this registers the adapter.
+        MagicDuskIntegration.install();
+
+        final adapter = DuskPlugin.navigateAdapter;
+        expect(adapter, isNotNull);
+
+        // 3. Invoke the adapter with a valid path.
+        final result = await adapter!('/dashboard');
+
+        // 4. Pump so GoRouter processes the navigation.
+        await tester.pumpAndSettle();
+
+        // 5. Adapter must return true and the router must reflect the new route.
+        expect(result, isTrue);
+        expect(MagicRouter.instance.currentLocation, equals('/dashboard'));
+      },
+    );
+
+    testWidgets(
+      'adapter returns false (or throws) when MagicRouter is not initialised',
+      (tester) async {
+        // No routes registered, no MaterialApp.router pumped: _router is null.
+        MagicDuskIntegration.install();
+
+        final adapter = DuskPlugin.navigateAdapter;
+        expect(adapter, isNotNull);
+
+        // The adapter must not crash the caller (dusk swallows throws), but it
+        // must NOT return true when the router is not ready.
+        bool? result;
+        try {
+          result = await adapter!('/anywhere');
+        } on Object {
+          // Throw is acceptable per the DuskNavigateAdapter contract.
+          result = null;
+        }
+
+        // Either null (threw) or false; never true.
+        expect(result, isNot(isTrue));
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
   // magicRecentExceptionsEnricher (Step 1.3 (c))
   // ---------------------------------------------------------------------------
 
