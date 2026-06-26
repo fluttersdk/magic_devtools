@@ -204,33 +204,44 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
     );
   }
 
-  /// The left navigation rail: a jump link per registered preview.
+  /// The left navigation rail: a jump link per registered preview. The list
+  /// scrolls independently (it can hold many more entries than fit the
+  /// viewport height) under a fixed header.
   Widget _buildSidebar() {
     return WDiv(
       className:
-          'flex flex-col w-56 h-full p-3 gap-1 '
+          'flex flex-col w-56 h-full '
           'bg-surface-container border-r border-color-border',
       children: [
         const WText(
           'Previews',
-          className: 'text-fg-muted text-xs font-semibold uppercase px-3 py-2',
+          className: 'text-fg-muted text-xs font-semibold uppercase px-6 py-4',
         ),
-        for (final PreviewEntry entry in widget.entries)
-          WAnchor(
-            key: ValueKey('magic-preview-nav-${entry.slug}'),
-            onTap: () => _select(entry),
+        Expanded(
+          child: SingleChildScrollView(
             child: WDiv(
-              className: entry.slug == _activeSlug
-                  ? 'px-3 py-2 rounded-md bg-primary-container'
-                  : 'px-3 py-2 rounded-md hover:bg-surface-container-high',
-              child: WText(
-                entry.label,
-                className: entry.slug == _activeSlug
-                    ? 'text-sm text-fg'
-                    : 'text-sm text-fg-muted',
-              ),
+              className: 'flex flex-col px-3 pb-3 gap-1',
+              children: [
+                for (final PreviewEntry entry in widget.entries)
+                  WAnchor(
+                    key: ValueKey('magic-preview-nav-${entry.slug}'),
+                    onTap: () => _select(entry),
+                    child: WDiv(
+                      className: entry.slug == _activeSlug
+                          ? 'px-3 py-2 rounded-md bg-primary-container'
+                          : 'px-3 py-2 rounded-md hover:bg-surface-container-high',
+                      child: WText(
+                        entry.label,
+                        className: entry.slug == _activeSlug
+                            ? 'text-sm text-fg'
+                            : 'text-sm text-fg-muted',
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
