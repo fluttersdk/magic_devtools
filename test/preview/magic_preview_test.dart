@@ -6,9 +6,11 @@ import 'package:magic_devtools/preview.dart';
 /// Tests for the [MagicPreviewCatalog] dev-only component preview framework.
 ///
 /// The catalog is the host surface for auto-discovered [PreviewEntry] widgets.
-/// The catalog renders a single pane in the ambient brightness; the header
-/// toggle flips light/dark. These tests mount the catalog with two fake
-/// entries, prove single-pane rendering, and exercise the theme toggle binding.
+/// It stacks EVERY entry as its own section on one scrolling page (idea-design
+/// parity); the sidebar is jump-to-section navigation, and the header toggle
+/// flips light/dark for the whole page. These tests mount the catalog with two
+/// fake entries, prove every section renders, exercise the theme toggle, and
+/// check that a sidebar tap reports the selected entry.
 
 /// A trivial preview body that paints a brightness-derived label so a test can
 /// read which [Brightness] the surrounding [WindTheme] resolved to.
@@ -40,12 +42,20 @@ List<PreviewEntry> _fakeEntries() {
   ];
 }
 
-Widget _mountCatalog(List<PreviewEntry> entries, {String? slug}) {
+Widget _mountCatalog(
+  List<PreviewEntry> entries, {
+  String? slug,
+  ValueChanged<PreviewEntry>? onSelect,
+}) {
   return WindTheme(
     data: WindThemeData(brightness: Brightness.light, syncWithSystem: false),
     builder: (context, controller) => MaterialApp(
       theme: controller.toThemeData(),
-      home: MagicPreviewCatalog(entries: entries, activeSlug: slug),
+      home: MagicPreviewCatalog(
+        entries: entries,
+        activeSlug: slug,
+        onSelect: onSelect,
+      ),
     ),
   );
 }
@@ -68,16 +78,18 @@ void main() {
   });
 
   group('MagicPreviewCatalog', () {
-    testWidgets('renders the active preview once in the ambient brightness', (
+    testWidgets('stacks every entry as a section in the ambient brightness', (
       tester,
     ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'alpha'));
       await tester.pump();
 
-      // The catalog shows a SINGLE pane in the ambient brightness (light here);
-      // the header toggle flips it. There is no side-by-side dark pane.
+      // Every entry renders its own section (all on one scrolling page) in the
+      // ambient brightness (light here); the header toggle flips them.
       expect(find.text('alpha:light'), findsOneWidget);
+      expect(find.text('beta:light'), findsOneWidget);
       expect(find.text('alpha:dark'), findsNothing);
+      expect(find.text('beta:dark'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -85,24 +97,21 @@ void main() {
       await tester.pumpWidget(_mountCatalog(_fakeEntries()));
       await tester.pump();
 
+      // Each label appears in the sidebar nav and as a section heading.
       expect(find.text('Alpha'), findsWidgets);
       expect(find.text('Beta'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('defaults to the first entry when no slug is given', (
-      tester,
-    ) async {
+    testWidgets('renders all sections when no slug is given', (tester) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries()));
       await tester.pump();
 
       expect(find.text('alpha:light'), findsOneWidget);
-      expect(find.text('alpha:dark'), findsNothing);
+      expect(find.text('beta:light'), findsOneWidget);
     });
 
-    testWidgets('toggling the wind theme flips the pane brightness', (
-      tester,
-    ) async {
+    testWidgets('toggling the wind theme flips every section', (tester) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'beta'));
       await tester.pump();
 
@@ -120,9 +129,28 @@ void main() {
       await tester.pump();
 
       expect(controller.brightness, Brightness.dark);
-      // The single pane re-renders in the toggled (dark) brightness.
+      // Every section re-renders in the toggled (dark) brightness.
+      expect(find.text('alpha:dark'), findsOneWidget);
       expect(find.text('beta:dark'), findsOneWidget);
+      expect(find.text('alpha:light'), findsNothing);
       expect(find.text('beta:light'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('tapping a sidebar item reports the selected entry', (
+      tester,
+    ) async {
+      PreviewEntry? selected;
+      await tester.pumpWidget(
+        _mountCatalog(_fakeEntries(), onSelect: (entry) => selected = entry),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('magic-preview-nav-beta')));
+      await tester.pumpAndSettle();
+
+      expect(selected, isNotNull);
+      expect(selected!.slug, 'beta');
       expect(tester.takeException(), isNull);
     });
   });

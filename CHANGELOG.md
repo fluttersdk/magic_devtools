@@ -12,8 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MagicPreview` framework: a dev-only component preview catalog hosted behind a
   `/preview` ShellRoute. New `package:magic_devtools/preview.dart` barrel exports
   the `PreviewEntry` contract (`label`, `slug`, `builder`), the
-  `MagicPreviewCatalog` widget (sidebar nav plus a light/dark pair per preview,
-  with a global theme toggle bound to wind's `WindTheme.of(context).toggleTheme()`),
+  `MagicPreviewCatalog` widget (a single vertically scrolling page that stacks
+  every registered preview as its own labeled section; the left sidebar is
+  jump-to-section navigation — tapping an item, or deep-linking
+  `/preview/<slug>`, scrolls that section into view — plus a global light/dark
+  toggle bound to wind's `WindTheme.of(context).toggleTheme()`),
   and the `MagicPreview` registration entrypoint (`register` plus `registerRoutes`).
   The route, catalog, and every registered `PreviewEntry` are reachable only
   through `MagicPreview.registerRoutes`, which is guarded by `kReleaseMode` plus
