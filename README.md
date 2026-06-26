@@ -33,7 +33,7 @@ Three import barrels:
 
 - `package:magic_devtools/dusk.dart`: `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
 - `package:magic_devtools/telescope.dart`: `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
-- `package:magic_devtools/preview.dart`: `MagicPreview` hosts a dev-only component preview catalog behind a `/preview` ShellRoute, tree-shaken from release builds.
+- `package:magic_devtools/preview.dart`: `MagicPreview` hosts a dev-only component preview catalog via two plain pages (`/preview` and `/preview/:component`), tree-shaken from release builds.
 
 ## Install
 

@@ -1,7 +1,8 @@
 /// Magic dev-only component preview catalog barrel.
 ///
-/// Import this file to host the auto-discovered component previews behind a
-/// `/preview` ShellRoute. The whole surface is dev-only: it is reachable only
+/// Import this file to host the auto-discovered component previews behind two
+/// plain pages (`/preview` and `/preview/:component`). The whole surface is
+/// dev-only: it is reachable only
 /// through [MagicPreview.registerRoutes], which is guarded by `kReleaseMode` +
 /// `bool.fromEnvironment('PREVIEW_ENABLED')` and tree-shaken from release
 /// builds.

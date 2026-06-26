@@ -3,13 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_devtools/preview.dart';
 
-/// Tests for [MagicPreview]'s registration entrypoint and the `/preview`
-/// ShellRoute it wires into [MagicRouter].
+/// Tests for [MagicPreview]'s registration entrypoint and the two plain
+/// `/preview` pages (`/preview` and `/preview/:component`) it wires into
+/// [MagicRouter] (a persistent ShellRoute is deliberately avoided — it would
+/// not rebuild when only the child route swaps).
 ///
 /// The release boundary itself (the `kReleaseMode` early return + tree-shaking)
 /// is asserted by Step 19 (a release-bundle symbol grep); these tests cover the
-/// debug-mode behavior: entries round-trip, and `registerRoutes` adds exactly
-/// one `magic-preview` layout BEFORE the router locks.
+/// debug-mode behavior: entries round-trip, and `registerRoutes` adds the
+/// `magic-preview` pages BEFORE the router locks.
 
 List<PreviewEntry> _entries() {
   return <PreviewEntry>[

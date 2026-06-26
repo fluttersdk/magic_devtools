@@ -5,9 +5,14 @@ import 'magic_preview.dart';
 
 /// Compile-time switch for the preview catalog.
 ///
-/// Defaults to [kDebugMode]: the catalog is reachable in debug and profile
-/// builds, never in release. A host can force it off in any mode with
-/// `--dart-define=PREVIEW_ENABLED=false`. Because this is a `const`, the
+/// Defaults to [kDebugMode]: ON in debug builds, OFF in profile and release
+/// (`kDebugMode` is false in both). A profile build can opt in with
+/// `--dart-define=PREVIEW_ENABLED=true`; a debug build can force it off with
+/// `--dart-define=PREVIEW_ENABLED=false`. Release is always blocked by the
+/// `kReleaseMode` guard in [MagicPreview.registerRoutes] regardless. Because
+/// this is a `const`, the release-mode optimizer can fold the guarded branch in
+/// [MagicPreview.registerRoutes] dead and tree-shake the entire catalog,
+/// every [PreviewEntry], and every builder it transitively references.
 /// release-mode optimizer can fold the guarded branch in
 /// [MagicPreview.registerRoutes] dead and tree-shake the entire catalog,
 /// every [PreviewEntry], and every builder it transitively references.
@@ -50,7 +55,9 @@ final class MagicPreview {
   /// [registerRoutes] short-circuits, so even if entries are registered they
   /// are never wired into a route and stay tree-shakeable.
   static void register(List<PreviewEntry> entries) {
-    _entries = entries;
+    // Defensively snapshot into an unmodifiable list so later mutation of the
+    // caller's list cannot change the registered catalog after the fact.
+    _entries = List.unmodifiable(entries);
   }
 
   /// Register the `/preview` catalog page and its `/preview/:component` deep

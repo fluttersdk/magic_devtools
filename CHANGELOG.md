@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `MagicPreview` framework: a dev-only component preview catalog hosted behind a
-  `/preview` ShellRoute. New `package:magic_devtools/preview.dart` barrel exports
+- `MagicPreview` framework: a dev-only component preview catalog hosted via two
+  plain pages (`/preview` and `/preview/:component`). New
+  `package:magic_devtools/preview.dart` barrel exports
   the `PreviewEntry` contract (`label`, `slug`, `builder`), the
   `MagicPreviewCatalog` widget (a scrollable sidebar next to a SINGLE active
   preview pane — tapping a sidebar item, or deep-linking `/preview/<slug>`,
