@@ -33,11 +33,11 @@ final class PreviewEntry {
 
 /// **The dev-only component preview catalog.**
 ///
-/// Renders a sidebar of [PreviewEntry] labels next to the active preview,
-/// shown simultaneously in BOTH light and dark so dark/light parity (the
-/// catalog's stated purpose) is verifiable at a glance. Each pane wraps the
-/// entry's body in its own nested [WindTheme] with a fixed [Brightness], so
-/// both brightnesses render no matter which way the global toggle points.
+/// Renders a sidebar of [PreviewEntry] labels next to the active preview in a
+/// single pane under the ambient wind theme. The header carries a "Toggle
+/// theme" button so the consumer flips light/dark for the whole catalog from
+/// one pane (no side-by-side light/dark columns). The single pane also mounts
+/// each controller-backed feature-screen preview once.
 ///
 /// The header carries a theme toggle bound to wind's [WindThemeController] via
 /// `WindTheme.of(context).toggleTheme()`; it flips the brightness of the host
@@ -190,8 +190,8 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
         WAnchor(
           key: const ValueKey('magic-preview-theme-toggle'),
           // Bind dark/light to wind's theme controller. This flips the ambient
-          // brightness for the host app theme; the per-pane previews below
-          // pin their own brightness so both always render.
+          // brightness for the whole catalog; the single preview pane below
+          // re-renders in the toggled brightness.
           onTap: () => WindTheme.of(context).toggleTheme(),
           child: WDiv(
             className:
@@ -207,7 +207,13 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
     );
   }
 
-  /// Render the active preview twice: once forced light, once forced dark.
+  /// Render the active preview in a SINGLE pane under the ambient wind theme.
+  ///
+  /// The catalog shows one rendering; the header "Toggle theme" button flips
+  /// the global wind brightness so the consumer sees light or dark from the
+  /// same pane (no side-by-side light/dark columns). A single pane also means
+  /// each controller-backed feature-screen preview mounts ONCE, avoiding the
+  /// duplicate-mount churn of a two-pane layout.
   Widget _buildPreviewPanes() {
     final PreviewEntry? active = _active;
     if (active == null) {
@@ -217,49 +223,14 @@ class _MagicPreviewCatalogState extends State<MagicPreviewCatalog> {
       );
     }
 
+    // Full-width single pane: component matrices use the `wrap` utility and
+    // feature screens are responsive, so content fits the pane width. No
+    // horizontal scroll wrapper (an unbounded-width parent would break overlay
+    // positioning for popovers/selects and give children no width to lay out
+    // against); the outer surface handles vertical scrolling.
     return WDiv(
-      className: 'flex flex-row gap-6 items-start',
-      children: [
-        _buildPane(active, Brightness.light, 'Light'),
-        _buildPane(active, Brightness.dark, 'Dark'),
-      ],
-    );
-  }
-
-  /// A single brightness-pinned pane wrapping [entry] in its own [WindTheme].
-  Widget _buildPane(PreviewEntry entry, Brightness brightness, String label) {
-    // Inherit the host app's theme (its semantic aliases + brand colors) and
-    // only PIN the brightness. A fresh bare WindThemeData would carry no
-    // aliases, so the components' semantic tokens (text-fg, bg-surface, ...)
-    // would resolve to no-ops and every preview would render Flutter's red
-    // unstyled-text fallback. copyWith keeps the ambient aliases/colors.
-    final WindThemeData paneTheme = WindTheme.of(
-      context,
-    ).data.copyWith(brightness: brightness, syncWithSystem: false);
-    return WDiv(
-      className: 'flex flex-col flex-1 gap-2',
-      children: [
-        WText(
-          label,
-          className: 'text-fg-muted text-xs font-semibold uppercase',
-        ),
-        WindTheme(
-          data: paneTheme,
-          child: Builder(
-            // The pane scrolls horizontally so a wide variant matrix does not
-            // overflow the half-width pane (the catalog shows light + dark side
-            // by side); vertical scrolling is handled by the outer surface.
-            builder: (paneContext) => SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: WDiv(
-                className:
-                    'p-6 rounded-lg border border-color-border bg-surface',
-                child: entry.builder(paneContext),
-              ),
-            ),
-          ),
-        ),
-      ],
+      className: 'p-6 rounded-lg border border-color-border bg-surface',
+      child: Builder(builder: (paneContext) => active.builder(paneContext)),
     );
   }
 }

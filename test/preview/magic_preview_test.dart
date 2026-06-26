@@ -6,9 +6,9 @@ import 'package:magic_devtools/preview.dart';
 /// Tests for the [MagicPreviewCatalog] dev-only component preview framework.
 ///
 /// The catalog is the host surface for auto-discovered [PreviewEntry] widgets.
-/// Its stated purpose is dark/light parity: every preview must render in BOTH
-/// brightnesses. These tests mount the catalog with two fake entries, prove
-/// both-brightness rendering, and exercise the wind theme toggle binding.
+/// The catalog renders a single pane in the ambient brightness; the header
+/// toggle flips light/dark. These tests mount the catalog with two fake
+/// entries, prove single-pane rendering, and exercise the theme toggle binding.
 
 /// A trivial preview body that paints a brightness-derived label so a test can
 /// read which [Brightness] the surrounding [WindTheme] resolved to.
@@ -68,17 +68,16 @@ void main() {
   });
 
   group('MagicPreviewCatalog', () {
-    testWidgets('renders the active preview in BOTH light and dark', (
+    testWidgets('renders the active preview once in the ambient brightness', (
       tester,
     ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'alpha'));
       await tester.pump();
 
-      // The catalog shows the active preview twice: a light pane and a dark
-      // pane, side by side. Each pane wraps the body in its own WindTheme so
-      // both brightnesses render regardless of the global toggle.
+      // The catalog shows a SINGLE pane in the ambient brightness (light here);
+      // the header toggle flips it. There is no side-by-side dark pane.
       expect(find.text('alpha:light'), findsOneWidget);
-      expect(find.text('alpha:dark'), findsOneWidget);
+      expect(find.text('alpha:dark'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -98,10 +97,10 @@ void main() {
       await tester.pump();
 
       expect(find.text('alpha:light'), findsOneWidget);
-      expect(find.text('alpha:dark'), findsOneWidget);
+      expect(find.text('alpha:dark'), findsNothing);
     });
 
-    testWidgets('toggling the wind theme flips the global brightness', (
+    testWidgets('toggling the wind theme flips the pane brightness', (
       tester,
     ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'beta'));
@@ -121,9 +120,9 @@ void main() {
       await tester.pump();
 
       expect(controller.brightness, Brightness.dark);
-      // Both panes still render after the global toggle, no exception.
-      expect(find.text('beta:light'), findsOneWidget);
+      // The single pane re-renders in the toggled (dark) brightness.
       expect(find.text('beta:dark'), findsOneWidget);
+      expect(find.text('beta:light'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
