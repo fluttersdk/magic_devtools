@@ -5,12 +5,12 @@ import 'package:magic_devtools/preview.dart';
 
 /// Tests for the [MagicPreviewCatalog] dev-only component preview framework.
 ///
-/// The catalog is the host surface for auto-discovered [PreviewEntry] widgets.
-/// It stacks EVERY entry as its own section on one scrolling page (idea-design
-/// parity); the sidebar is jump-to-section navigation, and the header toggle
-/// flips light/dark for the whole page. These tests mount the catalog with two
-/// fake entries, prove every section renders, exercise the theme toggle, and
-/// check that a sidebar tap reports the selected entry.
+/// The catalog hosts auto-discovered [PreviewEntry] widgets. It renders a
+/// scrollable sidebar next to a SINGLE active pane: only the selected entry is
+/// built (so a large, screen-heavy catalog stays responsive), and the header
+/// toggle flips light/dark. These tests mount the catalog with two fake
+/// entries, prove single-pane rendering, exercise the theme toggle, and check
+/// that a sidebar tap reports + shows the selected entry.
 
 /// A trivial preview body that paints a brightness-derived label so a test can
 /// read which [Brightness] the surrounding [WindTheme] resolved to.
@@ -78,18 +78,16 @@ void main() {
   });
 
   group('MagicPreviewCatalog', () {
-    testWidgets('stacks every entry as a section in the ambient brightness', (
+    testWidgets('renders only the active preview in the ambient brightness', (
       tester,
     ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'alpha'));
       await tester.pump();
 
-      // Every entry renders its own section (all on one scrolling page) in the
-      // ambient brightness (light here); the header toggle flips them.
+      // Single pane: only the selected entry's body is mounted (light here).
       expect(find.text('alpha:light'), findsOneWidget);
-      expect(find.text('beta:light'), findsOneWidget);
+      expect(find.text('beta:light'), findsNothing);
       expect(find.text('alpha:dark'), findsNothing);
-      expect(find.text('beta:dark'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -97,47 +95,45 @@ void main() {
       await tester.pumpWidget(_mountCatalog(_fakeEntries()));
       await tester.pump();
 
-      // Each label appears in the sidebar nav and as a section heading.
       expect(find.text('Alpha'), findsWidgets);
       expect(find.text('Beta'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('renders all sections when no slug is given', (tester) async {
+    testWidgets('defaults to the first entry when no slug is given', (
+      tester,
+    ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries()));
       await tester.pump();
 
       expect(find.text('alpha:light'), findsOneWidget);
-      expect(find.text('beta:light'), findsOneWidget);
+      expect(find.text('beta:light'), findsNothing);
     });
 
-    testWidgets('toggling the wind theme flips every section', (tester) async {
+    testWidgets('toggling the wind theme flips the active pane brightness', (
+      tester,
+    ) async {
       await tester.pumpWidget(_mountCatalog(_fakeEntries(), slug: 'beta'));
       await tester.pump();
 
-      // 1. Capture the controller through the catalog subtree.
       final BuildContext context = tester.element(
         find.byType(MagicPreviewCatalog),
       );
       final WindThemeController controller = WindTheme.of(context);
       expect(controller.brightness, Brightness.light);
 
-      // 2. The toggle control drives WindTheme.of(context).toggleTheme().
       await tester.tap(
         find.byKey(const ValueKey('magic-preview-theme-toggle')),
       );
       await tester.pump();
 
       expect(controller.brightness, Brightness.dark);
-      // Every section re-renders in the toggled (dark) brightness.
-      expect(find.text('alpha:dark'), findsOneWidget);
       expect(find.text('beta:dark'), findsOneWidget);
-      expect(find.text('alpha:light'), findsNothing);
       expect(find.text('beta:light'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping a sidebar item reports the selected entry', (
+    testWidgets('tapping a sidebar item selects and shows that entry', (
       tester,
     ) async {
       PreviewEntry? selected;
@@ -146,11 +142,18 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byKey(const ValueKey('magic-preview-nav-beta')));
-      await tester.pumpAndSettle();
+      // Starts on the first entry.
+      expect(find.text('alpha:light'), findsOneWidget);
+      expect(find.text('beta:light'), findsNothing);
 
+      await tester.tap(find.byKey(const ValueKey('magic-preview-nav-beta')));
+      await tester.pump();
+
+      // Swaps the pane to the tapped entry and reports it.
       expect(selected, isNotNull);
       expect(selected!.slug, 'beta');
+      expect(find.text('beta:light'), findsOneWidget);
+      expect(find.text('alpha:light'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
