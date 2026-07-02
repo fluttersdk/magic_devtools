@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `MagicDevtools` umbrella wiring: a new `package:magic_devtools/magic_devtools.dart`
+  barrel exposing `MagicDevtools.installPre()` / `MagicDevtools.installPost()`.
+  `installPre` boots both tool plugins and registers telescope's opt-in
+  `ExceptionWatcher` + `DumpWatcher` (call before `Magic.init()`); `installPost`
+  wires `MagicTelescopeIntegration` + `MagicDuskIntegration` (call after
+  `Magic.init()`). Collapses the previous four `kDebugMode` blocks in a host's
+  `lib/main.dart` into two, while preserving the load-bearing pre/post ordering
+  and the call-site `kDebugMode` guard (moving the guard inside would defeat the
+  release tree-shake).
 - `MagicPreview` framework: a dev-only component preview catalog hosted via two
   plain pages (`/preview` and `/preview/:component`). New
   `package:magic_devtools/preview.dart` barrel exports

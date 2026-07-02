@@ -29,8 +29,9 @@
 
 It is **debug-only**: you install and wire it under `kDebugMode`, so release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core; the framework keeps no dev-tooling production dependencies.
 
-Three import barrels:
+Four import barrels:
 
+- `package:magic_devtools/magic_devtools.dart`: `MagicDevtools` is the umbrella one-call wiring: `installPre()` boots both tool plugins (plus telescope's opt-in exception/dump watchers) before `Magic.init()`, `installPost()` wires both Magic integrations after it.
 - `package:magic_devtools/dusk.dart`: `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
 - `package:magic_devtools/telescope.dart`: `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
 - `package:magic_devtools/preview.dart`: `MagicPreview` hosts a dev-only component preview catalog via two plain pages (`/preview` and `/preview/:component`), tree-shaken from release builds.
@@ -51,6 +52,18 @@ dependencies:
 ## Wiring
 
 Both integrations are debug-only and run in `lib/main.dart`. The ordering is load-bearing: the dusk/telescope plugin installs **before** `Magic.init()` (so the snapshot pipeline is live during Magic boot and the exception watcher catches boot errors), and the Magic integration installs **after** `Magic.init()` (its enrichers and adapter resolve Magic primitives through the IoC container).
+
+### Both tools at once (recommended)
+
+`MagicDevtools` collapses the four blocks below into the two halves of that ordering. Keep the `kDebugMode` guard at the call site: moving it inside the methods would make the call live in release and defeat the tree-shake.
+
+```dart
+if (kDebugMode) MagicDevtools.installPre();   // dusk + telescope plugins + exception/dump watchers
+await Magic.init(configFactories: [...]);
+if (kDebugMode) MagicDevtools.installPost();  // MagicTelescopeIntegration + MagicDuskIntegration
+```
+
+Reach for the individual barrels below when you need only one tool, or a non-standard telescope watcher set (register extra watchers with `TelescopePlugin.registerWatcher` after `installPre`).
 
 ### Dusk
 
