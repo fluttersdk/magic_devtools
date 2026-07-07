@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Magic adapters for the FlutterSDK dev-tooling ecosystem.</strong><br/>
-  Wire Magic's runtime into <a href="https://pub.dev/packages/fluttersdk_dusk">fluttersdk_dusk</a> (E2E driver) and <a href="https://pub.dev/packages/fluttersdk_telescope">fluttersdk_telescope</a> (runtime inspector) — debug-only, zero release cost.
+  Wire Magic's runtime into <a href="https://pub.dev/packages/fluttersdk_dusk">fluttersdk_dusk</a> (E2E driver) and <a href="https://pub.dev/packages/fluttersdk_telescope">fluttersdk_telescope</a> (runtime inspector), debug-only with zero release cost.
 </p>
 
 <p align="center">
@@ -21,22 +21,24 @@
 
 ---
 
-> **Alpha Release** — part of the Magic ecosystem, under active development. APIs may change before stable. [Star the repo](https://github.com/fluttersdk/magic_devtools) to follow progress.
+> **Alpha Release**: part of the Magic ecosystem, under active development. APIs may change before stable. [Star the repo](https://github.com/fluttersdk/magic_devtools) to follow progress.
 
 ## What is magic_devtools?
 
 `magic_devtools` is the Magic adapter layer for [`fluttersdk_dusk`](https://pub.dev/packages/fluttersdk_dusk) and [`fluttersdk_telescope`](https://pub.dev/packages/fluttersdk_telescope). It enriches dusk snapshots and telescope records with Magic-aware context (forms, navigation, controllers, gates, auth, broadcasting, HTTP) so an LLM agent or CI driver sees your app the way Magic sees it.
 
-It is **debug-only**: you install and wire it under `kDebugMode`, so release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core — the framework keeps no dev-tooling production dependencies.
+It is **debug-only**: you install and wire it under `kDebugMode`, so release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core; the framework keeps no dev-tooling production dependencies.
 
-Two import barrels:
+Four import barrels:
 
-- `package:magic_devtools/dusk.dart` — `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
-- `package:magic_devtools/telescope.dart` — `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
+- `package:magic_devtools/magic_devtools.dart`: `MagicDevtools` is the umbrella one-call wiring: `installPre()` boots both tool plugins (plus telescope's opt-in exception/dump watchers) before `Magic.init()`, `installPost()` wires both Magic integrations after it.
+- `package:magic_devtools/dusk.dart`: `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
+- `package:magic_devtools/telescope.dart`: `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
+- `package:magic_devtools/preview.dart`: `MagicPreview` hosts a dev-only component preview catalog via two plain pages (`/preview` and `/preview/:component`), tree-shaken from release builds.
 
 ## Install
 
-`magic_devtools` and the tooling packages are imported in `lib/main.dart` (under `kDebugMode`), so they are regular `dependencies`, not `dev_dependencies` — `kDebugMode` tree-shakes them out of release builds, and because `lib/` imports them a `dev_dependencies` entry would trip the `depend_on_referenced_packages` lint. This matches how `fluttersdk_dusk` and `fluttersdk_telescope` are installed on their own.
+`magic_devtools` and the tooling packages are imported in `lib/main.dart` (under `kDebugMode`), so they are regular `dependencies`, not `dev_dependencies`; `kDebugMode` tree-shakes them out of release builds, and because `lib/` imports them a `dev_dependencies` entry would trip the `depend_on_referenced_packages` lint. This matches how `fluttersdk_dusk` and `fluttersdk_telescope` are installed on their own.
 
 ```yaml
 dependencies:
@@ -50,6 +52,18 @@ dependencies:
 ## Wiring
 
 Both integrations are debug-only and run in `lib/main.dart`. The ordering is load-bearing: the dusk/telescope plugin installs **before** `Magic.init()` (so the snapshot pipeline is live during Magic boot and the exception watcher catches boot errors), and the Magic integration installs **after** `Magic.init()` (its enrichers and adapter resolve Magic primitives through the IoC container).
+
+### Both tools at once (recommended)
+
+`MagicDevtools` collapses the four blocks below into the two halves of that ordering. Keep the `kDebugMode` guard at the call site: moving it inside the methods would make the call live in release and defeat the tree-shake.
+
+```dart
+if (kDebugMode) MagicDevtools.installPre();   // dusk + telescope plugins + exception/dump watchers
+await Magic.init(configFactories: [...]);
+if (kDebugMode) MagicDevtools.installPost();  // MagicTelescopeIntegration + MagicDuskIntegration
+```
+
+Reach for the individual barrels below when you need only one tool, or a non-standard telescope watcher set (register extra watchers with `TelescopePlugin.registerWatcher` after `installPre`).
 
 ### Dusk
 
@@ -76,6 +90,29 @@ if (kDebugMode) {
 ```
 
 You can wire either integration on its own, or both together: install each plugin before `Magic.init()` and each Magic integration after it. The `dusk:install` and `telescope:install` Artisan commands wire these blocks into `lib/main.dart` automatically when `magic_devtools` is a dependency.
+
+### Preview catalog
+
+`MagicPreview` hosts a dev-only component preview catalog: a sidebar of registered components next to each preview rendered in BOTH light and dark, with a global theme toggle bound to wind's `WindThemeController`. It is reachable only through `MagicPreview.registerRoutes()`, guarded by `kReleaseMode` plus `const bool.fromEnvironment('PREVIEW_ENABLED', defaultValue: kDebugMode)`, so the route, the catalog, and every registered `PreviewEntry` const-fold dead and tree-shake out of release builds.
+
+The router-lock timing is load-bearing: `MagicRouter` locks its route table on the first `routerConfig` access, so registration MUST happen in a provider `boot()` (which runs during the Magic bootstrap lifecycle, before `MaterialApp` reads `routerConfig`). Register too late and `/preview` silently never appears.
+
+```dart
+class RouteServiceProvider extends ServiceProvider {
+  RouteServiceProvider(super.app);
+
+  @override
+  Future<void> boot() async {
+    registerAppRoutes();
+    if (kDebugMode) {
+      MagicPreview.register(previewEntries()); // from the generated _previews.g.dart
+      MagicPreview.registerRoutes();
+    }
+  }
+}
+```
+
+The `previews:refresh` Artisan command scans `*.preview.dart` files and regenerates `previewEntries()` returning a `List<PreviewEntry>` from a function (never a top-level const, the dart-lang/sdk#33920 retention foot-gun).
 
 ## Ecosystem
 
@@ -110,11 +147,11 @@ dependency_overrides:
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT, see [LICENSE](LICENSE) for details.
 
 ---
 
 <p align="center">
   <sub>Built with care by <a href="https://github.com/fluttersdk">FlutterSDK</a></sub><br/>
-  <sub>If magic_devtools helps you, <a href="https://github.com/fluttersdk/magic_devtools">give it a star</a> — it helps others discover it.</sub>
+  <sub>If magic_devtools helps you, <a href="https://github.com/fluttersdk/magic_devtools">give it a star</a>; it helps others discover it.</sub>
 </p>
