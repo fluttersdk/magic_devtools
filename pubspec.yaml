@@ -1,6 +1,6 @@
 name: magic_devtools
 description: "Magic adapters for the fluttersdk dev-tooling ecosystem: wires MagicDuskIntegration and MagicTelescopeIntegration into dusk and telescope."
-version: 0.0.1
+version: 0.0.2
 homepage: https://magic.fluttersdk.com
 repository: https://github.com/fluttersdk/magic_devtools
 issue_tracker: https://github.com/fluttersdk/magic_devtools/issues
@@ -12,10 +12,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^0.0.3
-  fluttersdk_dusk: ^0.0.8
+  magic: ^0.0.6
+  fluttersdk_dusk: ^0.0.9
   fluttersdk_telescope: ^0.0.4
-  fluttersdk_wind: ^1.1.2
+  fluttersdk_wind: ^1.2.1
 
 dev_dependencies:
   flutter_test:
