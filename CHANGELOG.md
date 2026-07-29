@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-07-29
+
 ### Added
 
 - `MagicDevtools` umbrella wiring: a new `package:magic_devtools/magic_devtools.dart`
