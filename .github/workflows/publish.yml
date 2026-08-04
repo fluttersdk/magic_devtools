@@ -30,6 +30,17 @@ jobs:
       - name: Run tests
         run: flutter test
 
+  # PREREQUISITE, and it is not in this file: pub.dev must have automated publishing
+  # turned on for this package (package page -> Admin -> Automated publishing),
+  # naming this repository and a matching tag pattern. Without it the workflow gets
+  # as far as uploading and pub.dev refuses with "The calling GitHub Action is not
+  # allowed to publish, because: publishing from github is not enabled", exit 65.
+  # That is what happened to the 0.0.2 tag on 2026-07-29: validate passed, the
+  # dry-run reported 0 warnings, and the release still never reached pub.dev, so the
+  # version sat unpublished while consumers requiring ^0.0.2 could not resolve at
+  # all. 0.0.2 was eventually published by hand from a maintainer's machine, which
+  # does NOT turn the setting on, so the next tag will fail the same way until
+  # somebody enables it. See https://dart.dev/go/publishing-from-github
   publish:
     needs: validate
     permissions:
