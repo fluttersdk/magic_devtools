@@ -38,9 +38,16 @@ jobs:
   # That is what happened to the 0.0.2 tag on 2026-07-29: validate passed, the
   # dry-run reported 0 warnings, and the release still never reached pub.dev, so the
   # version sat unpublished while consumers requiring ^0.0.2 could not resolve at
-  # all. 0.0.2 was eventually published by hand from a maintainer's machine, which
-  # does NOT turn the setting on, so the next tag will fail the same way until
-  # somebody enables it. See https://dart.dev/go/publishing-from-github
+  # all. 0.0.2 was then published by hand from a maintainer's machine, which does
+  # NOT turn the setting on.
+  #
+  # The setting has since been enabled and the path is verified: re-triggering the
+  # workflow on 2026-08-04 got "Version 0.0.2 of package magic_devtools already
+  # exists" instead of the permission refusal, which is pub.dev accepting this
+  # Action's identity and declining only the duplicate version. So the next release
+  # publishes from here. Keep the note anyway: the prerequisite is invisible in this
+  # repository, and the failure it causes looks like anything but a missing setting.
+  # See https://dart.dev/go/publishing-from-github
   publish:
     needs: validate
     permissions:

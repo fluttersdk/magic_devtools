@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-08-05
+
+Documentation only; no runtime change. The package code is identical to 0.0.2.
+
+### Changed
+
+- The README install snippet pins the versions actually shipped rather than a
+  looser range, so a copy-paste resolves to the combination this package is tested
+  against.
+- `.github/workflows/publish.yml` names the pub.dev prerequisite it cannot check
+  for itself. Automated publishing has to be enabled per package on pub.dev, and
+  without it a tag gets all the way through validate, a clean `--dry-run` and the
+  upload before pub.dev refuses; that is what left 0.0.2 unpublished for a week
+  while consumers requiring `^0.0.2` could not resolve at all. This release is also
+  the first to go out through that path rather than by hand.
+
 ## [0.0.2] - 2026-07-29
 
 ### Added
