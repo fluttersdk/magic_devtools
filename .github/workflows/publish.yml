@@ -41,12 +41,14 @@ jobs:
   # all. 0.0.2 was then published by hand from a maintainer's machine, which does
   # NOT turn the setting on.
   #
-  # The setting has since been enabled and the path is verified: re-triggering the
-  # workflow on 2026-08-04 got "Version 0.0.2 of package magic_devtools already
-  # exists" instead of the permission refusal, which is pub.dev accepting this
-  # Action's identity and declining only the duplicate version. So the next release
-  # publishes from here. Keep the note anyway: the prerequisite is invisible in this
-  # repository, and the failure it causes looks like anything but a missing setting.
+  # STILL NOT ENABLED as of 0.0.3, which also had to be published by hand.
+  #
+  # And do not try to probe it by re-tagging an already-published version: pub.dev
+  # checks version-existence BEFORE authorization, so an existing version always
+  # answers "Version X of package Y already exists" whether or not publishing from
+  # github is enabled. That reply looks like proof the identity was accepted and is
+  # not; 0.0.3 was tagged on the strength of that reading and got the permission
+  # refusal anyway. The only honest test is a version that does not exist yet.
   # See https://dart.dev/go/publishing-from-github
   publish:
     needs: validate

@@ -20,8 +20,8 @@ Documentation only; no runtime change. The package code is identical to 0.0.2.
   for itself. Automated publishing has to be enabled per package on pub.dev, and
   without it a tag gets all the way through validate, a clean `--dry-run` and the
   upload before pub.dev refuses; that is what left 0.0.2 unpublished for a week
-  while consumers requiring `^0.0.2` could not resolve at all. This release is also
-  the first to go out through that path rather than by hand.
+  while consumers requiring `^0.0.2` could not resolve at all. That setting is still
+  off, so this release was published by hand as well.
 
 ## [0.0.2] - 2026-07-29
 
