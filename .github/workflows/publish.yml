@@ -41,7 +41,13 @@ jobs:
   # all. 0.0.2 was then published by hand from a maintainer's machine, which does
   # NOT turn the setting on.
   #
-  # STILL NOT ENABLED as of 0.0.3, which also had to be published by hand.
+  # The setting was turned on for this package on 2026-08-05. It is ENABLED AND
+  # STILL UNVERIFIED, and those are two different things: 0.0.2 and 0.0.3 both had
+  # to be published by hand, so no release has yet travelled this path end to end.
+  # The first tag pushed for a version that does not exist on pub.dev is the test,
+  # and until one lands, treat a green `validate` job as saying nothing about
+  # whether the upload will be authorized. Delete this paragraph when a release
+  # actually reaches pub.dev through the workflow, and say which version proved it.
   #
   # And do not try to probe it by re-tagging an already-published version: pub.dev
   # checks version-existence BEFORE authorization, so an existing version always
