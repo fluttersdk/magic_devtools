@@ -76,6 +76,23 @@ FramePerfRecord _frameRecord(int frameNumber) => FramePerfRecord(
   blocks: const <String, ({int micros, int count})>{},
 );
 
+/// Moves wind's counters the way the app does: by building a real W-widget.
+///
+/// The `record*` entry points are `@internal` to `fluttersdk_wind`, since they
+/// exist for its own parse path, so reaching for them here would assert
+/// against a surface no consumer is meant to touch. A pump is also the honest
+/// version of this setup: it is what actually moves these numbers in an app.
+Future<void> _buildOneWidget(WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: WindTheme(
+        data: WindThemeData(),
+        child: const WDiv(className: 'p-4'),
+      ),
+    ),
+  );
+}
+
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -211,9 +228,11 @@ void main() {
       expect(last['durationMicros']! as int, greaterThanOrEqualTo(0));
     });
 
-    test('perfSessionBeginHook clears only the perf state', () {
+    testWidgets('perfSessionBeginHook clears only the perf state', (
+      WidgetTester tester,
+    ) async {
       WindPerfCounters.enabled = true;
-      WindPerfCounters.recordCacheHit();
+      await _buildOneWidget(tester);
       TelescopeStore.recordFramePerf(_frameRecord(3));
       TelescopeStore.recordDump(
         DumpRecord(message: 'sibling buffer', time: DateTime(2026, 8, 25)),
@@ -234,7 +253,9 @@ void main() {
       );
     });
 
-    test('the session pair turns wind counting on and back off', () {
+    testWidgets('the session pair turns wind counting on and back off', (
+      WidgetTester tester,
+    ) async {
       MagicPerfIntegration.install();
       expect(WindPerfCounters.enabled, isFalse);
 
@@ -245,7 +266,7 @@ void main() {
       expect(WindPerfCounters.enabled, isTrue);
       expect(WindPerfCounters.cacheHits, 0);
 
-      WindPerfCounters.recordCacheHit();
+      await _buildOneWidget(tester);
       perfSessionEndHook();
 
       // The end hook stops the counting but leaves the totals alone, because

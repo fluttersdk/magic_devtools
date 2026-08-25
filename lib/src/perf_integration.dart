@@ -33,15 +33,24 @@ import 'package:magic/magic.dart';
 /// `fluttersdk_wind` is reached through magic's barrel, which re-exports it
 /// wholesale (`magic/lib/magic.dart:4`); importing it directly here would be
 /// flagged as an unnecessary import.
-/// dusk's own no-op defaults, captured before this package assigns over them.
+/// dusk's own no-op defaults, captured the first time [MagicPerfIntegration]
+/// is about to overwrite them.
 ///
-/// Read at load rather than re-typed in `resetForTesting`, so a change to
-/// dusk's declared shape reaches the reset instead of leaving this package and
-/// its tests agreeing with each other about a contract that had moved.
-final Map<String, Object?> Function() _duskFramePerfDefault = framePerfReader;
-final Map<String, Object?> Function() _duskPerfExtrasDefault = perfExtrasReader;
-final void Function() _duskSessionBeginDefault = perfSessionBeginHook;
-final void Function() _duskSessionEndDefault = perfSessionEndHook;
+/// Captured rather than re-typed here, so a change to dusk's declared shape
+/// reaches the reset instead of leaving this package and its tests agreeing
+/// with each other about a contract that had moved.
+///
+/// NOT top-level `final`s, which is the version this replaces and which did
+/// not work: a top-level `final` in Dart initialises on first READ, and the
+/// only reader is `resetForTesting()`, which runs after `install()` has
+/// already assigned over the pointers. It captured this package's own closures
+/// and restored them, so every "back to the default" assertion was really
+/// asserting that install had happened. Verified with a standalone repro
+/// before replacing it.
+Map<String, Object?> Function()? _duskFramePerfDefault;
+Map<String, Object?> Function()? _duskPerfExtrasDefault;
+void Function()? _duskSessionBeginDefault;
+void Function()? _duskSessionEndDefault;
 
 class MagicPerfIntegration {
   MagicPerfIntegration._();
@@ -89,6 +98,13 @@ class MagicPerfIntegration {
     // 4. The four dusk pointers. Each returns exactly the key set pinned in
     //    `dusk/lib/src/utils/perf_readers.dart`; the consumer is in another
     //    repository, so a renamed key is invisible until a driven run.
+    //
+    //    dusk's own defaults are captured HERE, immediately before they are
+    //    overwritten, because that is the last moment they are still readable.
+    _duskFramePerfDefault ??= framePerfReader;
+    _duskPerfExtrasDefault ??= perfExtrasReader;
+    _duskSessionBeginDefault ??= perfSessionBeginHook;
+    _duskSessionEndDefault ??= perfSessionEndHook;
     framePerfReader = () => <String, Object?>{
       'frames': TelescopeStore.recentFramePerf()
           .map<Map<String, Object?>>((FramePerfRecord r) => r.toJson())
@@ -163,10 +179,14 @@ class MagicPerfIntegration {
     // rather than hand-written here. Re-typing them would let this package and
     // its tests agree on a key set that had drifted from dusk's, and the
     // assertions would keep passing while production drifted with them.
-    framePerfReader = _duskFramePerfDefault;
-    perfExtrasReader = _duskPerfExtrasDefault;
-    perfSessionBeginHook = _duskSessionBeginDefault;
-    perfSessionEndHook = _duskSessionEndDefault;
+    // Null only when install() never ran, in which case the pointers are
+    // already at dusk's defaults and there is nothing to put back.
+    if (_duskFramePerfDefault != null) {
+      framePerfReader = _duskFramePerfDefault!;
+      perfExtrasReader = _duskPerfExtrasDefault!;
+      perfSessionBeginHook = _duskSessionBeginDefault!;
+      perfSessionEndHook = _duskSessionEndDefault!;
+    }
   }
 
   static void _recordNotify(MagicController controller) {
