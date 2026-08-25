@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-08-26
+
 ### Added
 
 - `MagicPerfIntegration`: the wiring that assembles the performance-diagnostic
@@ -25,6 +27,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the router has been built, and that `StateError` is deliberately not caught:
   a silently unregistered observer would produce a report with no route
   transitions and nothing to explain their absence.
+
+### Changed
+
+- **The four sibling dependency floors now state what the code actually needs.**
+  They were `magic: ^0.0.6`, `fluttersdk_dusk: ^0.0.9`,
+  `fluttersdk_telescope: ^0.0.4` and `fluttersdk_wind: ^1.2.1`, and every one of
+  them was below the release that introduced an API `MagicPerfIntegration` calls:
+  `MagicController.onRefreshUI` arrived in magic 0.0.7, the four
+  `perf_readers.dart` pointers in dusk 0.0.12, `FramePerfWatcher` and
+  `TelescopeStore.recentFramePerf` / `clearFramePerf` in telescope 0.0.5, and
+  `WindPerfCounters` with `Wind.installPerfResolver()` in wind 1.5.0.
+
+  A caret range resolves to the newest version available, so a fresh resolution
+  always picked up the right siblings and CI stayed green. A consumer whose own
+  constraints hold one of them back would not: pub would report the graph as
+  satisfiable and the build would then fail on undefined symbols. That is not
+  hypothetical, it is what this branch's own CI did while `^1.2.1` was still
+  resolving wind 1.4.1, with 18 errors all naming `WindPerfCounters` or
+  `installPerfResolver`. Now `^0.0.7`, `^0.0.12`, `^0.0.5` and `^1.5.0`.
 
 ## [0.0.3] - 2026-08-05
 
