@@ -93,12 +93,39 @@ Future<void> _buildOneWidget(WidgetTester tester) async {
   );
 }
 
+/// Builds the widget once against a COLD parse cache, so the build that
+/// follows is guaranteed to be a hit.
+///
+/// `WindParser._styleCache` is a static map keyed by className plus theme
+/// state, so every test in this isolate shares it. Without pinning it, whether
+/// a build counts as a hit or a miss depends on which test ran first: these two
+/// cases used to pass together and fail when either was run alone, because one
+/// warmed the key the other asserted on.
+Future<void> _warmTheParseCache(WidgetTester tester) async {
+  WindParser.clearCache();
+  await _buildOneWidget(tester);
+  // Pump something else in between: pumping an identical tree does not rebuild
+  // it, so the next _buildOneWidget would parse nothing at all and the hit the
+  // caller is waiting for would never happen.
+  await tester.pumpWidget(const SizedBox.shrink());
+  WindPerfCounters.reset();
+}
+
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
   });
 
+  // `MagicDevtools.installPre()` installs telescope's DumpWatcher, which
+  // replaces the global `debugPrint`. Nothing here used to put it back, so
+  // Flutter's own post-test check ("the value of a foundation debug variable
+  // was changed by the test") fired on whichever `testWidgets` case happened to
+  // run NEXT. That made the failure land on an innocent test and only under
+  // some orderings, which is why it survived a green suite.
+  late void Function(String?, {int? wrapWidth}) originalDebugPrint;
+
   setUp(() {
+    originalDebugPrint = debugPrint;
     MagicApp.reset();
     Magic.flush();
     MagicRouter.reset();
@@ -112,6 +139,7 @@ void main() {
     TelescopeStore.resetForTesting();
     WindPerfCounters.enabled = false;
     WindPerfCounters.reset();
+    debugPrint = originalDebugPrint;
   });
 
   group('MagicPerfIntegration.install', () {
@@ -232,7 +260,12 @@ void main() {
       WidgetTester tester,
     ) async {
       WindPerfCounters.enabled = true;
+      await _warmTheParseCache(tester);
       await _buildOneWidget(tester);
+      // A non-zero before the hook runs is the whole point: asserting zero
+      // afterwards proves nothing if it was already zero, which is what this
+      // case did while it happened to run first.
+      expect(WindPerfCounters.cacheHits, greaterThan(0));
       TelescopeStore.recordFramePerf(_frameRecord(3));
       TelescopeStore.recordDump(
         DumpRecord(message: 'sibling buffer', time: DateTime(2026, 8, 25)),
@@ -256,6 +289,9 @@ void main() {
     testWidgets('the session pair turns wind counting on and back off', (
       WidgetTester tester,
     ) async {
+      // Warmed here rather than inherited from whichever test ran before, so
+      // the build below is a hit whatever the order or the shuffle seed.
+      await _warmTheParseCache(tester);
       MagicPerfIntegration.install();
       expect(WindPerfCounters.enabled, isFalse);
 

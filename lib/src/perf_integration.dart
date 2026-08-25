@@ -175,7 +175,10 @@ class MagicPerfIntegration {
     _watcher?.uninstall();
     _watcher = null;
     WindPerfCounters.enabled = false;
-    // Restored from the values dusk itself declared, captured once at load,
+    // Restored from the values dusk itself declared, captured on the first
+    // install rather than at load (a top-level `final` in Dart initialises on
+    // first READ, so capturing at load would have caught this integration's own
+    // closures instead of dusk's defaults),
     // rather than hand-written here. Re-typing them would let this package and
     // its tests agree on a key set that had drifted from dusk's, and the
     // assertions would keep passing while production drifted with them.
