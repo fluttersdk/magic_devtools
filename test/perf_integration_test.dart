@@ -1,0 +1,292 @@
+import 'dart:ui' show FrameTiming, PlatformDispatcher, TimingsCallback;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fluttersdk_dusk/dusk.dart'
+    show
+        framePerfReader,
+        perfExtrasReader,
+        perfSessionBeginHook,
+        perfSessionEndHook;
+import 'package:fluttersdk_telescope/telescope.dart';
+import 'package:magic/magic.dart';
+import 'package:magic_devtools/magic_devtools.dart';
+
+/// Tests for [MagicPerfIntegration], the single place dusk, telescope, wind and
+/// magic meet.
+///
+/// The failure mode this file exists to prevent is silent: an unassigned reader
+/// pointer or an unregistered observer produces a structurally complete report
+/// of zeros, with no error, in a different repository. So every test here
+/// asserts on the DATA that reaches the pointer, never on `install()` merely
+/// returning.
+
+// ---------------------------------------------------------------------------
+// Test fixtures
+// ---------------------------------------------------------------------------
+
+class _AlphaController extends MagicController {}
+
+class _BetaController extends MagicController {}
+
+/// Builds a [FrameTiming] from the raw microsecond stamps its public factory
+/// takes; that factory's own docstring says it exists for unit tests, and
+/// `tester.pump()` delivers no timing of its own.
+FrameTiming _timing({required int frameNumber}) {
+  const int vsyncStart = 0;
+  const int buildStart = 1000;
+  const int buildFinish = buildStart + 4000;
+  const int rasterFinish = buildFinish + 2000;
+
+  return FrameTiming(
+    vsyncStart: vsyncStart,
+    buildStart: buildStart,
+    buildFinish: buildFinish,
+    rasterStart: buildFinish,
+    rasterFinish: rasterFinish,
+    rasterFinishWallTime: rasterFinish,
+    frameNumber: frameNumber,
+  );
+}
+
+/// Fires a timings batch the way the engine would.
+///
+/// Asserts the dispatcher is armed first: with no timings callback registered
+/// `onReportTimings` is null, and a silently-null `?.call` would make every
+/// count below vacuous.
+void _fireTimings(List<FrameTiming> timings) {
+  final TimingsCallback? report = PlatformDispatcher.instance.onReportTimings;
+  expect(
+    report,
+    isNotNull,
+    reason: 'the platform dispatcher must be armed for an injected batch to '
+        'reach the frame watcher at all',
+  );
+  report!(timings);
+}
+
+FramePerfRecord _frameRecord(int frameNumber) => FramePerfRecord(
+  frameNumber: frameNumber,
+  buildMicros: 4000,
+  rasterMicros: 2000,
+  vsyncOverheadMicros: 1000,
+  totalSpanMicros: 7000,
+  time: DateTime(2026, 8, 25),
+  blocks: const <String, ({int micros, int count})>{},
+);
+
+void main() {
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+  });
+
+  setUp(() {
+    MagicApp.reset();
+    Magic.flush();
+    MagicRouter.reset();
+    MagicPerfIntegration.resetForTesting();
+    TelescopeStore.resetForTesting();
+  });
+
+  tearDown(() {
+    MagicPerfIntegration.resetForTesting();
+    MagicRouter.reset();
+    TelescopeStore.resetForTesting();
+    WindPerfCounters.enabled = false;
+    WindPerfCounters.reset();
+  });
+
+  group('MagicPerfIntegration.install', () {
+    test('registers exactly one observer and one watcher when called twice', () {
+      MagicPerfIntegration.install();
+      MagicPerfIntegration.install();
+
+      expect(MagicPerfIntegration.isInstalled, isTrue);
+      expect(MagicRouter.instance.observers, hasLength(1));
+
+      // TelescopePlugin keeps its watcher list private, so the watcher count is
+      // asserted through its only observable effect: a second FramePerfWatcher
+      // would add a second timings callback and record the same frame twice.
+      _fireTimings(<FrameTiming>[_timing(frameNumber: 7)]);
+      expect(TelescopeStore.recentFramePerf(), hasLength(1));
+    });
+
+    test('attributes notify counts to each controller runtime type', () {
+      MagicPerfIntegration.install();
+
+      final _AlphaController alpha = _AlphaController();
+      final _BetaController beta = _BetaController();
+      alpha.refreshUI();
+      alpha.refreshUI();
+      beta.refreshUI();
+
+      expect(MagicPerfIntegration.controllerNotifyCounts, <String, int>{
+        '_AlphaController': 2,
+        '_BetaController': 1,
+      });
+    });
+
+    testWidgets('surfaces the StateError when the router is already built', (
+      WidgetTester tester,
+    ) async {
+      MagicRoute.page('/', () => const SizedBox());
+      await tester.pumpWidget(
+        MaterialApp.router(routerConfig: MagicRouter.instance.routerConfig),
+      );
+      await tester.pumpAndSettle();
+
+      // A swallowed StateError would leave the report with no route
+      // transitions and no explanation for why.
+      expect(MagicPerfIntegration.install, throwsStateError);
+      expect(MagicPerfIntegration.isInstalled, isFalse);
+    });
+  });
+
+  group('the dusk pointers', () {
+    test('framePerfReader returns the recorded frames and the counter', () {
+      TelescopeStore.recordFramePerf(_frameRecord(11));
+      TelescopeStore.recordFramePerf(_frameRecord(12));
+
+      MagicPerfIntegration.install();
+
+      final Map<String, Object?> payload = framePerfReader();
+      expect(payload.keys, unorderedEquals(<String>['frames', 'livenessCounter']));
+
+      final List<Object?> frames = payload['frames']! as List<Object?>;
+      expect(frames, hasLength(2));
+      expect(
+        frames
+            .cast<Map<String, Object?>>()
+            .map((Map<String, Object?> f) => f['frameNumber']),
+        <int>[11, 12],
+      );
+      expect(payload['livenessCounter'], isA<int>());
+    });
+
+    test('perfExtrasReader returns the notify counts', () {
+      MagicPerfIntegration.install();
+      _AlphaController().refreshUI();
+
+      final Map<String, Object?> payload = perfExtrasReader();
+      expect(
+        payload.keys,
+        unorderedEquals(<String>['controllerNotifies', 'routeTransitions']),
+      );
+      expect(payload['controllerNotifies'], <String, int>{'_AlphaController': 1});
+      expect(payload['routeTransitions'], isEmpty);
+    });
+
+    testWidgets('perfExtrasReader carries a named, timed route transition', (
+      WidgetTester tester,
+    ) async {
+      MagicRoute.page('/', () => const SizedBox());
+      MagicRoute.page('/monitors', () => const SizedBox());
+
+      // Before the router is built, which is the whole reason the observer
+      // registration lives in installPre().
+      MagicPerfIntegration.install();
+
+      await tester.pumpWidget(
+        MaterialApp.router(routerConfig: MagicRouter.instance.routerConfig),
+      );
+      await tester.pumpAndSettle();
+
+      MagicRouter.instance.to('/monitors');
+      await tester.pumpAndSettle();
+
+      final List<Object?> transitions =
+          perfExtrasReader()['routeTransitions']! as List<Object?>;
+      expect(transitions, isNotEmpty);
+
+      final Map<String, Object?> last =
+          transitions.last! as Map<String, Object?>;
+      expect(last['route'], '/monitors');
+      expect(last['durationMicros'], isA<int>());
+      expect(last['durationMicros']! as int, greaterThanOrEqualTo(0));
+    });
+
+    test('perfSessionBeginHook clears only the perf state', () {
+      WindPerfCounters.enabled = true;
+      WindPerfCounters.recordCacheHit();
+      TelescopeStore.recordFramePerf(_frameRecord(3));
+      TelescopeStore.recordDump(
+        DumpRecord(message: 'sibling buffer', time: DateTime(2026, 8, 25)),
+      );
+
+      MagicPerfIntegration.install();
+      _AlphaController().refreshUI();
+      perfSessionBeginHook();
+
+      expect(WindPerfCounters.cacheHits, 0);
+      expect(TelescopeStore.recentFramePerf(), isEmpty);
+      expect(MagicPerfIntegration.controllerNotifyCounts, isEmpty);
+      // TelescopeStore.clear() would have taken this with it, which is why the
+      // hook calls clearFramePerf() instead.
+      expect(
+        TelescopeStore.recentDumps().map((DumpRecord r) => r.message),
+        contains('sibling buffer'),
+      );
+    });
+
+    test('the session pair turns wind counting on and back off', () {
+      MagicPerfIntegration.install();
+      expect(WindPerfCounters.enabled, isFalse);
+
+      perfSessionBeginHook();
+
+      // Zeroing without enabling would report a wind section of all zeros
+      // beside populated frame and magic sections, with no error to say why.
+      expect(WindPerfCounters.enabled, isTrue);
+      expect(WindPerfCounters.cacheHits, 0);
+
+      WindPerfCounters.recordCacheHit();
+      perfSessionEndHook();
+
+      // The end hook stops the counting but leaves the totals alone, because
+      // `perf_end` reads them to build its report.
+      expect(WindPerfCounters.enabled, isFalse);
+      expect(WindPerfCounters.cacheHits, 1);
+    });
+  });
+
+  group('MagicPerfIntegration.resetForTesting', () {
+    test('restores the hook, the counters and all four pointers', () {
+      MagicPerfIntegration.install();
+      _AlphaController().refreshUI();
+      perfSessionBeginHook();
+      TelescopeStore.recordFramePerf(_frameRecord(5));
+
+      MagicPerfIntegration.resetForTesting();
+
+      expect(MagicPerfIntegration.isInstalled, isFalse);
+      expect(MagicController.onRefreshUI, isNull);
+      expect(MagicPerfIntegration.controllerNotifyCounts, isEmpty);
+      // A reset that left counting on would tax every later test in the suite.
+      expect(WindPerfCounters.enabled, isFalse);
+      expect(framePerfReader(), <String, Object?>{
+        'frames': <Map<String, Object?>>[],
+        'livenessCounter': 0,
+      });
+      expect(perfExtrasReader(), <String, Object?>{
+        'controllerNotifies': <String, int>{},
+        'routeTransitions': <Map<String, Object?>>[],
+      });
+
+      // The restored hooks are no-ops: the frame buffer survives the begin
+      // hook and counting stays off after the end hook.
+      perfSessionBeginHook();
+      perfSessionEndHook();
+      expect(TelescopeStore.recentFramePerf(), hasLength(1));
+      expect(WindPerfCounters.enabled, isFalse);
+    });
+  });
+
+  group('MagicDevtools.installPre', () {
+    test('installs the perf integration before the router is built', () {
+      MagicDevtools.installPre();
+
+      expect(MagicPerfIntegration.isInstalled, isTrue);
+      expect(MagicRouter.instance.observers, hasLength(1));
+    });
+  });
+}

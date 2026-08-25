@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MagicPerfIntegration`: the wiring that assembles the performance-diagnostic
+  data path across four packages. It sets `MagicController.onRefreshUI` to a
+  counter keyed by controller runtime type, registers a `NavigatorObserver`
+  through `MagicRouter.addObserver` that times each route push to the first
+  post-frame callback after the new route builds, calls
+  `Wind.installPerfResolver()`, registers telescope's `FramePerfWatcher`, and
+  assigns the four `fluttersdk_dusk` pointers (`framePerfReader`,
+  `perfExtrasReader`, `perfSessionBeginHook`, `perfSessionEndHook`). This
+  package is the only place dusk, telescope, wind and magic are all visible at
+  once, so it is the only place those pointers can be assigned; dusk declares
+  them with no-op defaults and never imports the packages it reports on.
+- `MagicDevtools.installPre()` now installs `MagicPerfIntegration`. It belongs
+  in the pre-`Magic.init()` half because `MagicRouter.addObserver` throws once
+  the router has been built, and that `StateError` is deliberately not caught:
+  a silently unregistered observer would produce a report with no route
+  transitions and nothing to explain their absence.
+
 ## [0.0.3] - 2026-08-05
 
 Documentation only; no runtime change. The package code is identical to 0.0.2.
