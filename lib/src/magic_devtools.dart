@@ -2,7 +2,10 @@ import 'package:fluttersdk_dusk/dusk.dart';
 import 'package:fluttersdk_telescope/telescope.dart';
 
 import 'dusk_integration.dart';
+import 'perf_integration.dart';
 import 'telescope_integration.dart';
+
+export 'perf_integration.dart';
 
 /// One-call wiring for the Magic dev-tooling bundle: fluttersdk_dusk +
 /// fluttersdk_telescope and their Magic integrations, installed in the two
@@ -57,15 +60,32 @@ class MagicDevtools {
   /// [DumpWatcher]: the two watchers telescope leaves opt-in but every Magic
   /// dev session wants (uncaught exceptions and `debugPrint` dumps).
   ///
+  /// Also installs [MagicPerfIntegration], the performance data path. It
+  /// belongs in this half rather than [installPost] because it registers a
+  /// [NavigatorObserver] through `MagicRouter.addObserver`, which throws once
+  /// the router has been built; the rest of its wiring would work from either
+  /// half and is kept with it at the one install site.
+  ///
   /// Each underlying install is idempotent, so a second call in the same
   /// isolate is safe. Register additional watchers after this call via
   /// [TelescopePlugin.registerWatcher].
+  ///
+  /// It is NOT safe to call late, though, and that is new: the perf
+  /// integration registers a [NavigatorObserver], and `MagicRouter.addObserver`
+  /// throws a [StateError] once the router has been built. A host that installs
+  /// this behind a lazy debug toggle after `runApp` used to get harmless
+  /// no-ops and now crashes. The throw is deliberate, since a silently
+  /// unregistered observer would produce a report with no route transitions
+  /// and nothing to explain their absence, but it means this belongs at boot
+  /// and nowhere else.
   static void installPre() {
     DuskPlugin.install();
 
     TelescopePlugin.install();
     TelescopePlugin.registerWatcher(ExceptionWatcher());
     TelescopePlugin.registerWatcher(DumpWatcher());
+
+    MagicPerfIntegration.install();
   }
 
   /// Post-`Magic.init()` half: wire Magic's runtime into both tools.
