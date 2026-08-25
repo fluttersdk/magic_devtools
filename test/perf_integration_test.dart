@@ -59,7 +59,8 @@ void _fireTimings(List<FrameTiming> timings) {
   expect(
     report,
     isNotNull,
-    reason: 'the platform dispatcher must be armed for an injected batch to '
+    reason:
+        'the platform dispatcher must be armed for an injected batch to '
         'reach the frame watcher at all',
   );
   report!(timings);
@@ -150,14 +151,17 @@ void main() {
       MagicPerfIntegration.install();
 
       final Map<String, Object?> payload = framePerfReader();
-      expect(payload.keys, unorderedEquals(<String>['frames', 'livenessCounter']));
+      expect(
+        payload.keys,
+        unorderedEquals(<String>['frames', 'livenessCounter']),
+      );
 
       final List<Object?> frames = payload['frames']! as List<Object?>;
       expect(frames, hasLength(2));
       expect(
-        frames
-            .cast<Map<String, Object?>>()
-            .map((Map<String, Object?> f) => f['frameNumber']),
+        frames.cast<Map<String, Object?>>().map(
+          (Map<String, Object?> f) => f['frameNumber'],
+        ),
         <int>[11, 12],
       );
       expect(payload['livenessCounter'], isA<int>());
@@ -172,7 +176,9 @@ void main() {
         payload.keys,
         unorderedEquals(<String>['controllerNotifies', 'routeTransitions']),
       );
-      expect(payload['controllerNotifies'], <String, int>{'_AlphaController': 1});
+      expect(payload['controllerNotifies'], <String, int>{
+        '_AlphaController': 1,
+      });
       expect(payload['routeTransitions'], isEmpty);
     });
 
