@@ -124,7 +124,7 @@ void main() {
   // orderings, which is why it survived a green suite.
   //
   // The restore has to happen INSIDE the test body, which is what
-  // [_restoreDebugPrint] is for. `_verifyInvariants()` runs immediately after
+  // [restoreDebugPrint] is for. `_verifyInvariants()` runs immediately after
   // `await testBody()` in `AutomatedTestWidgetsFlutterBinding.runTest`
   // (`flutter_test/lib/src/binding.dart:1974`), so both `tearDown` and
   // `addTearDown` are too late: a `testWidgets` case that installs the watcher
@@ -358,9 +358,11 @@ void main() {
   group('MagicDevtools.installPre', () {
     test('installs the perf integration before the router is built', () {
       MagicDevtools.installPre();
-      // Inline, not in a tearDown: see the note on [restoreDebugPrint]. This
-      // case is a plain `test()` today, so it would survive either way, but
-      // the day it becomes a `testWidgets` it would fail on itself.
+      // A net, not the mechanism. The restore that matters is the inline call
+      // at the end of this body, for the reason on [restoreDebugPrint]; this
+      // case is a plain `test()` today, so a tearDown would serve either way,
+      // but the day it becomes a `testWidgets` it would fail on itself before
+      // any tearDown runs.
       //
       // If you do convert it, note that `installPre()` also leaves a
       // SemanticsHandle active (dusk's snapshot pipeline enables semantics),
@@ -385,7 +387,7 @@ void main() {
 
       MagicRouter.instance.observers.first.didPush(
         PageRouteBuilder<void>(
-          pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+          pageBuilder: (_, _, _) => const SizedBox.shrink(),
         ),
         null,
       );
