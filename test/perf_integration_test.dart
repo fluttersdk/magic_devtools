@@ -295,4 +295,27 @@ void main() {
       expect(MagicRouter.instance.observers, hasLength(1));
     });
   });
+  group('route transitions', () {
+    test('an anonymous push is not recorded', () {
+      // showDialog and showModalBottomSheet push unnamed routes through the
+      // same navigator. Recording them would let a dialog-heavy session evict
+      // the real page transitions out of the bounded list the report ranks.
+      MagicPerfIntegration.install();
+      addTearDown(MagicPerfIntegration.resetForTesting);
+
+      final int before = MagicPerfIntegration.routeTransitions.length;
+
+      MagicRouter.instance.observers.first.didPush(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+        null,
+      );
+
+      // No pump needed and that is the point: an unnamed push returns before
+      // scheduling the post-frame callback that would close the span, so
+      // there is nothing in flight to wait for.
+      expect(MagicPerfIntegration.routeTransitions, hasLength(before));
+    });
+  });
 }

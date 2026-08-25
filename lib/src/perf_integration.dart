@@ -33,6 +33,16 @@ import 'package:magic/magic.dart';
 /// `fluttersdk_wind` is reached through magic's barrel, which re-exports it
 /// wholesale (`magic/lib/magic.dart:4`); importing it directly here would be
 /// flagged as an unnecessary import.
+/// dusk's own no-op defaults, captured before this package assigns over them.
+///
+/// Read at load rather than re-typed in `resetForTesting`, so a change to
+/// dusk's declared shape reaches the reset instead of leaving this package and
+/// its tests agreeing with each other about a contract that had moved.
+final Map<String, Object?> Function() _duskFramePerfDefault = framePerfReader;
+final Map<String, Object?> Function() _duskPerfExtrasDefault = perfExtrasReader;
+final void Function() _duskSessionBeginDefault = perfSessionBeginHook;
+final void Function() _duskSessionEndDefault = perfSessionEndHook;
+
 class MagicPerfIntegration {
   MagicPerfIntegration._();
 
@@ -53,11 +63,15 @@ class MagicPerfIntegration {
   static void install() {
     if (_installed) return;
 
-    // 1. The only step that can fail, so it runs before the idempotency guard
-    //    is armed: marking the integration installed and then throwing would
-    //    turn a retry into a silent no-op.
-    MagicRouter.instance.addObserver(_observer);
-    _installed = true;
+    // 1. Registered once and tracked separately, because the guard below is
+    //    armed at the END rather than here. Arming it early would make a retry
+    //    after a throw in steps 2 to 4 a silent no-op, which is the failure
+    //    this class exists to prevent; arming it late without this flag would
+    //    register a second observer on that retry.
+    if (!_observerRegistered) {
+      MagicRouter.instance.addObserver(_observer);
+      _observerRegistered = true;
+    }
 
     // 2. magic: one hook on the single notifyListeners() call site in
     //    MagicController, counted per controller runtime type so the report can
@@ -102,6 +116,9 @@ class MagicPerfIntegration {
       // report, and `WindParser.parse` is too hot to leave instrumented.
       WindPerfCounters.enabled = false;
     };
+
+    // 5. Last, so a throw anywhere above leaves the door open for a retry.
+    _installed = true;
   }
 
   /// Whether [install] has been called at least once.
@@ -135,22 +152,21 @@ class MagicPerfIntegration {
   @visibleForTesting
   static void resetForTesting() {
     _installed = false;
+    _observerRegistered = false;
     _controllerNotifies.clear();
     _routeTransitions.clear();
     MagicController.onRefreshUI = null;
     _watcher?.uninstall();
     _watcher = null;
     WindPerfCounters.enabled = false;
-    framePerfReader = () => <String, Object?>{
-      'frames': <Map<String, Object?>>[],
-      'livenessCounter': 0,
-    };
-    perfExtrasReader = () => <String, Object?>{
-      'controllerNotifies': <String, int>{},
-      'routeTransitions': <Map<String, Object?>>[],
-    };
-    perfSessionBeginHook = () {};
-    perfSessionEndHook = () {};
+    // Restored from the values dusk itself declared, captured once at load,
+    // rather than hand-written here. Re-typing them would let this package and
+    // its tests agree on a key set that had drifted from dusk's, and the
+    // assertions would keep passing while production drifted with them.
+    framePerfReader = _duskFramePerfDefault;
+    perfExtrasReader = _duskPerfExtrasDefault;
+    perfSessionBeginHook = _duskSessionBeginDefault;
+    perfSessionEndHook = _duskSessionEndDefault;
   }
 
   static void _recordNotify(MagicController controller) {
@@ -173,6 +189,7 @@ class MagicPerfIntegration {
   }
 
   static bool _installed = false;
+  static bool _observerRegistered = false;
   static FramePerfWatcher? _watcher;
   static final _RouteTransitionObserver _observer = _RouteTransitionObserver();
   static final Map<String, int> _controllerNotifies = <String, int>{};
@@ -192,7 +209,15 @@ class _RouteTransitionObserver extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
 
-    final String name = route.settings.name ?? '(unnamed)';
+    // An anonymous push is a dialog or a bottom sheet, not a page transition.
+    // showDialog and showModalBottomSheet both go through the navigator, so in
+    // a dialog-heavy session they would share the bounded list with the real
+    // transitions and evict the very entries the report is ranking. Skipped
+    // rather than bucketed: a duration nobody can attribute to a screen is not
+    // one an agent can act on.
+    final String? name = route.settings.name;
+    if (name == null) return;
+
     final Stopwatch watch = Stopwatch()..start();
 
     // One-shot by design, one per push: unlike a per-frame drain there is

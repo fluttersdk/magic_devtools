@@ -69,6 +69,15 @@ class MagicDevtools {
   /// Each underlying install is idempotent, so a second call in the same
   /// isolate is safe. Register additional watchers after this call via
   /// [TelescopePlugin.registerWatcher].
+  ///
+  /// It is NOT safe to call late, though, and that is new: the perf
+  /// integration registers a [NavigatorObserver], and `MagicRouter.addObserver`
+  /// throws a [StateError] once the router has been built. A host that installs
+  /// this behind a lazy debug toggle after `runApp` used to get harmless
+  /// no-ops and now crashes. The throw is deliberate, since a silently
+  /// unregistered observer would produce a report with no route transitions
+  /// and nothing to explain their absence, but it means this belongs at boot
+  /// and nowhere else.
   static void installPre() {
     DuskPlugin.install();
 
