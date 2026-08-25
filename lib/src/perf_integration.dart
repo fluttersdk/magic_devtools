@@ -11,6 +11,25 @@ import 'package:fluttersdk_dusk/dusk.dart'
 import 'package:fluttersdk_telescope/telescope.dart';
 import 'package:magic/magic.dart';
 
+/// dusk's own no-op defaults, captured the first time [MagicPerfIntegration]
+/// is about to overwrite them.
+///
+/// Captured rather than re-typed here, so a change to dusk's declared shape
+/// reaches the reset instead of leaving this package and its tests agreeing
+/// with each other about a contract that had moved.
+///
+/// NOT top-level `final`s, which is the version this replaces and which did
+/// not work: a top-level `final` in Dart initialises on first READ, and the
+/// only reader is `resetForTesting()`, which runs after `install()` has
+/// already assigned over the pointers. It captured this package's own closures
+/// and restored them, so every "back to the default" assertion was really
+/// asserting that install had happened. Verified with a standalone repro
+/// before replacing it.
+Map<String, Object?> Function()? _duskFramePerfDefault;
+Map<String, Object?> Function()? _duskPerfExtrasDefault;
+void Function()? _duskSessionBeginDefault;
+void Function()? _duskSessionEndDefault;
+
 /// Assembles the whole performance-diagnostic data path: magic's controller and
 /// route activity, wind's aggregate counters, telescope's frame buffer, and the
 /// four pointers `fluttersdk_dusk` reads them all through.
@@ -33,25 +52,6 @@ import 'package:magic/magic.dart';
 /// `fluttersdk_wind` is reached through magic's barrel, which re-exports it
 /// wholesale (`magic/lib/magic.dart:4`); importing it directly here would be
 /// flagged as an unnecessary import.
-/// dusk's own no-op defaults, captured the first time [MagicPerfIntegration]
-/// is about to overwrite them.
-///
-/// Captured rather than re-typed here, so a change to dusk's declared shape
-/// reaches the reset instead of leaving this package and its tests agreeing
-/// with each other about a contract that had moved.
-///
-/// NOT top-level `final`s, which is the version this replaces and which did
-/// not work: a top-level `final` in Dart initialises on first READ, and the
-/// only reader is `resetForTesting()`, which runs after `install()` has
-/// already assigned over the pointers. It captured this package's own closures
-/// and restored them, so every "back to the default" assertion was really
-/// asserting that install had happened. Verified with a standalone repro
-/// before replacing it.
-Map<String, Object?> Function()? _duskFramePerfDefault;
-Map<String, Object?> Function()? _duskPerfExtrasDefault;
-void Function()? _duskSessionBeginDefault;
-void Function()? _duskSessionEndDefault;
-
 class MagicPerfIntegration {
   MagicPerfIntegration._();
 
@@ -175,13 +175,12 @@ class MagicPerfIntegration {
     _watcher?.uninstall();
     _watcher = null;
     WindPerfCounters.enabled = false;
-    // Restored from the values dusk itself declared, captured on the first
-    // install rather than at load (a top-level `final` in Dart initialises on
-    // first READ, so capturing at load would have caught this integration's own
-    // closures instead of dusk's defaults),
-    // rather than hand-written here. Re-typing them would let this package and
-    // its tests agree on a key set that had drifted from dusk's, and the
-    // assertions would keep passing while production drifted with them.
+    // Restored from the values dusk itself declared rather than hand-written
+    // here. Re-typing them would let this package and its tests agree on a key
+    // set that had drifted from dusk's, and the assertions would keep passing
+    // while production drifted with them. See the four fields at the top of
+    // this file for why they are captured on the first install and not at load.
+    //
     // Null only when install() never ran, in which case the pointers are
     // already at dusk's defaults and there is nothing to put back.
     if (_duskFramePerfDefault != null) {
