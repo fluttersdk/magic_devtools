@@ -117,12 +117,23 @@ void main() {
   });
 
   // `MagicDevtools.installPre()` installs telescope's DumpWatcher, which
-  // replaces the global `debugPrint`. Nothing here used to put it back, so
-  // Flutter's own post-test check ("the value of a foundation debug variable
-  // was changed by the test") fired on whichever `testWidgets` case happened to
-  // run NEXT. That made the failure land on an innocent test and only under
-  // some orderings, which is why it survived a green suite.
+  // replaces the global `debugPrint`. Nothing used to put it back, so Flutter's
+  // own post-test check ("the value of a foundation debug variable was changed
+  // by the test") fired on whichever `testWidgets` case happened to run NEXT.
+  // That made the failure land on an innocent test and only under some
+  // orderings, which is why it survived a green suite.
+  //
+  // The restore has to happen INSIDE the test body, which is what
+  // [_restoreDebugPrint] is for. `_verifyInvariants()` runs immediately after
+  // `await testBody()` in `AutomatedTestWidgetsFlutterBinding.runTest`
+  // (`flutter_test/lib/src/binding.dart:1974`), so both `tearDown` and
+  // `addTearDown` are too late: a `testWidgets` case that installs the watcher
+  // fails on ITSELF before either runs. The `tearDown` below is a net for the
+  // plain `test()` cases, which have no invariant check.
   late void Function(String?, {int? wrapWidth}) originalDebugPrint;
+
+  /// Puts the global `debugPrint` back, from inside the test body.
+  void restoreDebugPrint() => debugPrint = originalDebugPrint;
 
   setUp(() {
     originalDebugPrint = debugPrint;
@@ -347,9 +358,19 @@ void main() {
   group('MagicDevtools.installPre', () {
     test('installs the perf integration before the router is built', () {
       MagicDevtools.installPre();
+      // Inline, not in a tearDown: see the note on [restoreDebugPrint]. This
+      // case is a plain `test()` today, so it would survive either way, but
+      // the day it becomes a `testWidgets` it would fail on itself.
+      //
+      // If you do convert it, note that `installPre()` also leaves a
+      // SemanticsHandle active (dusk's snapshot pipeline enables semantics),
+      // which is a second end-of-test invariant and needs its own dispose.
+      // Measured by converting this case as a probe.
+      addTearDown(restoreDebugPrint);
 
       expect(MagicPerfIntegration.isInstalled, isTrue);
       expect(MagicRouter.instance.observers, hasLength(1));
+      restoreDebugPrint();
     });
   });
   group('route transitions', () {
