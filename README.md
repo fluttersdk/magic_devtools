@@ -42,9 +42,9 @@ Four import barrels:
 
 ```yaml
 dependencies:
-  magic_devtools: ^0.0.2
-  fluttersdk_dusk: ^0.0.9        # add if you use dusk
-  fluttersdk_telescope: ^0.0.4   # add if you use telescope
+  magic_devtools: ^0.0.4
+  fluttersdk_dusk: ^0.0.13       # add if you use dusk
+  fluttersdk_telescope: ^0.0.5   # add if you use telescope
 ```
 
 `magic_devtools` depends on `magic`, `fluttersdk_dusk`, and `fluttersdk_telescope` directly, so transitive resolution does not happen through `magic` itself.
