@@ -44,6 +44,10 @@ directly is flagged as an unnecessary import.
 Local sibling development goes through the gitignored `pubspec_overrides.yaml`. The committed
 `pubspec.yaml` stays on hosted caret constraints so a fork outside this workspace resolves on its own.
 
+That overrides file must use ABSOLUTE paths. `.worktreeinclude` copies it into worktrees under
+`.claude/worktrees/<slug>`, where the conventional relative `../magic` resolves to
+`.claude/worktrees/magic` and fails version solving on the first path dependency.
+
 ## Barrels
 
 Four, and the split is the API:
