@@ -595,9 +595,13 @@ void main() {
     });
 
     testWidgets('emits string-alias middleware names verbatim', (tester) async {
-      // String aliases pass through without Kernel resolution — they're
-      // surfaced as-is so the snapshot stays useful even when the alias
-      // isn't registered.
+      // A string alias is surfaced as the route declared it, not as the
+      // middleware the Kernel resolves it to: the alias is what an agent can
+      // grep the route table for. It has to be registered, because magic
+      // 0.0.14 refuses to build a router whose route names an unregistered
+      // alias, so an unregistered one can no longer reach a snapshot.
+      Kernel.register('guest', () => _NamedMiddleware('redirect-if-authed'));
+      addTearDown(Kernel.flush);
       MagicRoute.page('/', () => const SizedBox()).middleware(['guest']);
 
       await tester.pumpWidget(
@@ -607,7 +611,7 @@ void main() {
       final element = _findElement(tester, SizedBox);
 
       final emitted = magicMiddlewareEnricher(element, RefRegistry.instance);
-      expect(emitted, contains('guest'));
+      expect(emitted, 'magicMiddleware: guest');
     });
   });
 
