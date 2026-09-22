@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-22
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.15` to `^0.0.16`, `fluttersdk_telescope` `^0.0.6` to `^0.0.7` and `fluttersdk_wind` `^1.6.2` to `^1.6.3`; `fluttersdk_dusk` stays at `^0.0.15`, still the newest. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. telescope 0.0.7 is a documentation fix, and nothing in wind 1.6.3 or magic 0.0.16 touches an API this package calls. (`pubspec.yaml`, `README.md`)
+
 ## [0.0.5] - 2026-09-21
 
 ### Changed
