@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-27
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.16` to `^0.0.22`, `fluttersdk_dusk` `^0.0.15` to `^0.0.16` and `fluttersdk_wind` `^1.6.3` to `^1.7.0`; `fluttersdk_telescope` stays at `^0.0.7`, still the newest. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. Of magic 0.0.22's BREAKING changes, the one that reaches this package is `Auth.fake()` dispatching `AuthLogin`/`AuthLogout` through the real `Event` facade, which only its tests call; the suite passes unchanged. dusk 0.0.16 stops `dusk:fill`/`dusk:type`/`dusk:clear` writing into a field on a covered route. (`pubspec.yaml`, `README.md`)
+
 ## [0.0.6] - 2026-09-22
 
 ### Changed
