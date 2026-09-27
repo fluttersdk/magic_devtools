@@ -42,8 +42,8 @@ Four import barrels:
 
 ```yaml
 dependencies:
-  magic_devtools: ^0.0.6
-  fluttersdk_dusk: ^0.0.15       # add if you use dusk
+  magic_devtools: ^0.0.7
+  fluttersdk_dusk: ^0.0.16       # add if you use dusk
   fluttersdk_telescope: ^0.0.7   # add if you use telescope
 ```
 
