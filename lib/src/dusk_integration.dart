@@ -8,9 +8,10 @@ import 'package:magic/magic.dart';
 /// Glues magic's primitives (MagicForm, MagicRouter, Gate, Auth, Echo) into
 /// the fluttersdk_dusk snapshot pipeline.
 ///
-/// Host integration (debug-only):
+/// Host integration (the consumer gates with `!kReleaseMode`, so debug and
+/// profile both carry it and release tree-shakes it):
 /// ```dart
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   DuskPlugin.install();
 ///   MagicDuskIntegration.install();
 /// }

@@ -45,9 +45,11 @@ List<Map<String, Object?>> Function()? _duskTimelineDefault;
 /// frame and record buffers, the wind and magic insight rules, and the dusk
 /// pointers that read them all.
 ///
-/// Host integration (debug-only, and BEFORE `Magic.init()`; see [install]):
+/// Host integration (the consumer gates with `!kReleaseMode`, so debug and
+/// profile both carry it and release tree-shakes it; BEFORE `Magic.init()`,
+/// see [install]):
 /// ```dart
-/// if (kDebugMode) MagicDevtools.installPre();
+/// if (!kReleaseMode) MagicDevtools.installPre();
 /// ```
 ///
 /// This package is the only place in the ecosystem where dusk, telescope, wind
