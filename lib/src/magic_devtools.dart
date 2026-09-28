@@ -5,6 +5,7 @@ import 'dusk_integration.dart';
 import 'perf_integration.dart';
 import 'telescope_integration.dart';
 
+export 'perf_insight_rules.dart';
 export 'perf_integration.dart';
 
 /// One-call wiring for the Magic dev-tooling bundle: fluttersdk_dusk +

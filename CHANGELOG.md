@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: the perf path reads magic through `MagicPerfHooks.sink`, and `MagicController.onRefreshUI` is gone.** `MagicPerfIntegration` no longer hooks a single notify site: its session begin hook installs the sink for an attribution session only (a timing session, and an app between sessions, allocate no event and leave wind counting off), and the end hook removes it. `perfExtrasReader` returns dusk's documented key set: `controllerNotifies`, `notifyCauses`, `queryReloads`, `actions`, `events`, `casts`, `timerTicks`, `broadcasts` and `routeTransitions`. Needs the magic, dusk, telescope and wind releases that ship `MagicPerfHooks`, `PerfMode`, record links and per-type wind counters. (`lib/src/perf_integration.dart`)
+- **HTTP records pair by request id.** The telescope interceptor matches each response or error to its request through `MagicRequest.id` / `MagicResponse.id` / `MagicError.id`, so two requests completing out of order keep their own URL and duration; only an answer without an id (an `Http.fake` response) falls back to the oldest request in flight with `attributedHeuristically: true`. Records carry `requestId`, `startUs` and `endUs`. (`lib/src/telescope_integration.dart`)
+
+### Added
+
+- **Interaction links on every record.** HTTP, query, event, model and cache records, and every sink row, carry `interactionId` and `linkedBy`: `zone` when the work read an open dusk interaction off its own zone, `frame` when it ran in the frame zone and joined dusk's active interaction, `window` when neither. `MagicPerfIntegration.interactionLink()` is the one rule. Gate records are not stamped: telescope's `GateRecord` has no link fields. (`lib/src/perf_integration.dart`, `lib/src/telescope_integration.dart`)
+- **`perfTimelineReader` and `perfInsightContributors` are assigned.** The timeline reader returns the sink rows (notifies, query reloads, actions, event dispatches, timer ticks, broadcasts) plus one row per telescope HTTP, query, event, model and cache record, in dusk's row schema. The contributor runs `PerfInsightRules`: wind wrapper emissions per W-widget build, `mediaQuerySize` reads per frame, parse misses on a warm surface, notify storms by cause, timer-driven notifies per second, uncached query reloads per interaction, attribute casts per frame, and HTTP requests per interaction. Every rule states its threshold in `evidence.threshold` and normalises by painted frames. (`lib/src/perf_insight_rules.dart`)
+
 ## [0.0.7] - 2026-09-27
 
 ### Changed

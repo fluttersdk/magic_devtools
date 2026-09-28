@@ -65,6 +65,10 @@ if (kDebugMode) MagicDevtools.installPost();  // MagicTelescopeIntegration + Mag
 
 Reach for the individual barrels below when you need only one tool, or a non-standard telescope watcher set (register extra watchers with `TelescopePlugin.registerWatcher` after `installPre`).
 
+### Performance sessions
+
+`installPre()` also installs `MagicPerfIntegration`, the data path behind dusk's `perf_begin` / `perf_end` / `perf_trace`. During an attribution session it counts magic's runtime activity through `MagicPerfHooks.sink` and wind's build, wrapper and inherited-read counters, stamps every telescope record with the dusk interaction it belongs to (`linkedBy: zone | frame | window`), and contributes wind and magic insights (`PerfInsightRules`) whose thresholds each insight states in `evidence.threshold`. A timing session touches neither counter.
+
 ### Dusk
 
 ```dart

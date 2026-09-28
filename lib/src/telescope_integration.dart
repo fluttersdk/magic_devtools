@@ -4,6 +4,8 @@ import 'package:fluttersdk_dusk/dusk.dart'
 import 'package:fluttersdk_telescope/telescope.dart';
 import 'package:magic/magic.dart';
 
+import 'perf_integration.dart';
+
 /// Glues magic's Http / Model / Cache facades into the fluttersdk_telescope
 /// store.
 ///
@@ -158,7 +160,7 @@ class MagicHttpFacadeAdapter implements TelescopeHttpAdapter {
   }
 
   /// Number of HTTP requests currently in flight on Magic's network driver,
-  /// surfaced via the interceptor's FIFO `_pending` list.
+  /// surfaced via the interceptor's `_pending` list.
   ///
   /// Pre-install (or post-uninstall) `_interceptor` is null and the getter
   /// short-circuits to 0 ; the null-guard keeps `TelescopeStore.pendingHttpCount`
@@ -168,31 +170,40 @@ class MagicHttpFacadeAdapter implements TelescopeHttpAdapter {
 }
 
 /// Internal interceptor ; translates Magic network lifecycle into
-/// [HttpRequestRecord] entries. Pairs request → response/error via a
-/// per-request stopwatch keyed on identity.
+/// [HttpRequestRecord] entries.
 ///
-/// FIFO attribution (`attributedHeuristically: true`) is used because
-/// `MagicNetworkInterceptor` does not carry a correlation handle across
-/// `onRequest` / `onResponse` calls ; best-effort matching by call order.
+/// Pairs each answer with its request by the id the driver stamps on
+/// [MagicRequest.id] and carries onto [MagicResponse.id] / [MagicError.id],
+/// so two requests completing out of order keep their own URL and duration.
+/// Only an answer without an id (an `Http.fake` response, a hand-built one)
+/// falls back to the oldest request in flight, and that record says so with
+/// `attributedHeuristically: true`.
 class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
   /// Set to true by [MagicHttpFacadeAdapter.uninstall] ; drops every
   /// subsequent record.
   bool _disarmed = false;
 
-  /// In-flight requests, FIFO. We pair onResponse/onError with the
-  /// oldest pending request.
+  /// In-flight requests, oldest first.
   final List<_InFlight> _pending = <_InFlight>[];
 
   @override
   dynamic onRequest(MagicRequest request) {
     if (_disarmed) return request;
+    // The interaction is read HERE, in the zone the request was sent from;
+    // the answer arrives on a socket callback that may not carry it.
+    final ({String? interactionId, String linkedBy}) link =
+        MagicPerfIntegration.interactionLink();
     _pending.add(
       _InFlight(
+        id: request.id,
         url: request.url,
         method: request.method,
         startedAt: DateTime.now(),
+        startUs: FlutterTimeline.now,
         requestHeaders: _stringHeaders(request.headers),
         requestBody: _truncate(request.data),
+        interactionId: link.interactionId,
+        linkedBy: link.linkedBy,
       ),
     );
     return request;
@@ -202,6 +213,7 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
   dynamic onResponse(MagicResponse response) {
     if (_disarmed) return response;
     _record(
+      id: response.id,
       statusCode: response.statusCode,
       isError: response.failed,
       responseBody: _truncate(response.data),
@@ -213,6 +225,7 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
   dynamic onError(MagicError error) {
     if (_disarmed) return error;
     _record(
+      id: error.id,
       statusCode: error.statusCode,
       isError: true,
       responseBody: error.message ?? _truncate(error.response?.data),
@@ -220,31 +233,41 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
     return error;
   }
 
-  /// 1. Pull the oldest in-flight (FIFO best-effort).
-  /// 2. Compute duration from the captured timestamp.
+  /// 1. Take the request this answer belongs to: by [id], or the oldest in
+  ///    flight when the answer carries none.
+  /// 2. Time it on the monotonic clock the rest of the trace uses.
   /// 3. Push a HttpRequestRecord into the store.
   void _record({
+    required int? id,
     required int statusCode,
     required bool isError,
     required String? responseBody,
   }) {
-    if (_pending.isEmpty) return;
-    final _InFlight pending = _pending.removeAt(0);
-    final int durationMs = DateTime.now()
-        .difference(pending.startedAt)
-        .inMilliseconds;
+    final int index = id == null
+        ? (_pending.isEmpty ? -1 : 0)
+        : _pending.indexWhere((_InFlight p) => p.id == id);
+    // An id nothing is waiting for: its request went out before install.
+    if (index == -1) return;
+    final _InFlight pending = _pending.removeAt(index);
+
+    final int endUs = FlutterTimeline.now;
     TelescopeStore.recordHttp(
       HttpRequestRecord(
         url: pending.url,
         method: pending.method,
         statusCode: statusCode,
-        durationMs: durationMs,
+        durationMs: (endUs - pending.startUs) ~/ 1000,
         isError: isError,
         timestamp: pending.startedAt,
         requestHeaders: pending.requestHeaders,
         requestBody: pending.requestBody,
         responseBody: responseBody,
-        attributedHeuristically: true,
+        attributedHeuristically: id == null,
+        requestId: pending.id?.toString(),
+        startUs: pending.startUs,
+        endUs: endUs,
+        interactionId: pending.interactionId,
+        linkedBy: pending.linkedBy,
       ),
     );
   }
@@ -254,18 +277,26 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
 /// between `onRequest` and `onResponse`/`onError`.
 class _InFlight {
   _InFlight({
+    required this.id,
     required this.url,
     required this.method,
     required this.startedAt,
+    required this.startUs,
     required this.requestHeaders,
     required this.requestBody,
+    required this.interactionId,
+    required this.linkedBy,
   });
 
+  final int? id;
   final String url;
   final String method;
   final DateTime startedAt;
+  final int startUs;
   final Map<String, String>? requestHeaders;
   final String? requestBody;
+  final String? interactionId;
+  final String linkedBy;
 }
 
 /// Coerce a `Map<String, dynamic>` headers map into the
@@ -343,6 +374,8 @@ class _ModelLifecycleListener extends MagicListener<ModelEvent> {
   Future<void> handle(ModelEvent event) async {
     final Model model = event.model;
     final dynamic key = model.id;
+    final ({String? interactionId, String linkedBy}) link =
+        MagicPerfIntegration.interactionLink();
     TelescopeStore.recordMagicModel(
       MagicModelRecord(
         modelClass: model.runtimeType.toString(),
@@ -350,6 +383,8 @@ class _ModelLifecycleListener extends MagicListener<ModelEvent> {
         modelKey: key == null ? '' : key.toString(),
         time: DateTime.now(),
         attributes: Map<String, dynamic>.from(model.attributes),
+        interactionId: link.interactionId,
+        linkedBy: link.linkedBy,
       ),
     );
   }
@@ -436,8 +471,17 @@ class _CacheListener extends MagicListener<MagicEvent> {
     } else {
       key = '*';
     }
+    final ({String? interactionId, String linkedBy}) link =
+        MagicPerfIntegration.interactionLink();
     TelescopeStore.recordMagicCache(
-      MagicCacheRecord(operation: op, key: key, time: DateTime.now(), ttl: ttl),
+      MagicCacheRecord(
+        operation: op,
+        key: key,
+        time: DateTime.now(),
+        ttl: ttl,
+        interactionId: link.interactionId,
+        linkedBy: link.linkedBy,
+      ),
     );
   }
 }
@@ -528,11 +572,15 @@ class _EventToRecord<T extends MagicEvent> extends MagicListener<T> {
 
   @override
   Future<void> handle(T event) async {
+    final ({String? interactionId, String linkedBy}) link =
+        MagicPerfIntegration.interactionLink();
     TelescopeStore.recordEvent(
       EventRecord(
         eventType: eventTypeName,
         payload: const <String, dynamic>{},
         time: DateTime.now(),
+        interactionId: link.interactionId,
+        linkedBy: link.linkedBy,
       ),
     );
   }
@@ -643,6 +691,8 @@ class MagicQueryWatcher implements TelescopeWatcher {
 class _QueryExecutedListener extends MagicListener<QueryExecuted> {
   @override
   Future<void> handle(QueryExecuted event) async {
+    final ({String? interactionId, String linkedBy}) link =
+        MagicPerfIntegration.interactionLink();
     TelescopeStore.recordQuery(
       QueryRecord(
         sql: event.sql,
@@ -650,6 +700,8 @@ class _QueryExecutedListener extends MagicListener<QueryExecuted> {
         timeMs: event.timeMs,
         connectionName: event.connectionName,
         time: DateTime.now(),
+        interactionId: link.interactionId,
+        linkedBy: link.linkedBy,
       ),
     );
   }
