@@ -117,6 +117,26 @@ void main() {
       );
     });
 
+    test('the mediaQuerySize summary describes a size-only subscription', () {
+      final Map<String, Object?> insight = PerfInsightRules.evaluate(
+        _report(),
+        _inputs(
+          wind: <String, Object?>{
+            'inheritedReads': <String, int>{'mediaQuerySize': 100},
+          },
+        ),
+      ).single;
+
+      // wind reads MediaQuery.sizeOf: a resize or a rotation rebuilds the
+      // reader, a keyboard inset does not. The old text said the opposite.
+      final String summary = insight['summary']! as String;
+      expect(summary, contains('MediaQuery.sizeOf'));
+      expect(summary, contains('resize'));
+      expect(summary, contains('not a keyboard inset'));
+      expect(summary, isNot(contains('MediaQuery.of')));
+      expect(summary, isNot(contains('EVERY')));
+    });
+
     test('parse misses on a warm surface fire; a session that navigated, or '
         'a low miss rate, does not', () {
       final Map<String, Object?> misses = <String, Object?>{

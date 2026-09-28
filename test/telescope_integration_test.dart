@@ -101,7 +101,7 @@ MagicResponse _ok({int statusCode = 200}) =>
 /// Stands in for dusk's `PerfInteraction`, whose constructor is private to
 /// dusk: a host test has no way to open a real one outside a perf session
 /// driven over the VM Service. Recognised through
-/// [MagicPerfIntegration.zoneInteractionId], the one seam that decides what a
+/// [MagicPerfIntegration.zoneInteraction], the one seam that decides what a
 /// zone value is; the zone key and the zone, frame, window order under test
 /// are the production ones.
 class _FakeInteraction {
@@ -115,8 +115,12 @@ class _FakeInteraction {
 /// Points both interaction sources at [_FakeInteraction]: the zone value, and
 /// the active slot a frame-zone read falls back to.
 void _useFakeInteractions({_FakeInteraction? active}) {
-  MagicPerfIntegration.zoneInteractionId = (Object? value) =>
-      value is _FakeInteraction && value.open ? value.id : null;
+  // An instant (these records carry no start time) needs an OPEN handle, so a
+  // closed one only has to report that it closed.
+  MagicPerfIntegration.zoneInteraction = (Object? value) =>
+      value is _FakeInteraction
+      ? (id: value.id, startUs: 0, closedAtUs: value.open ? null : 1)
+      : null;
   MagicPerfIntegration.activeInteractionId = () =>
       active != null && active.open ? active.id : null;
 }

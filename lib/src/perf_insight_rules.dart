@@ -197,17 +197,17 @@ abstract final class PerfInsightRules {
       summary:
           'wind read MediaQuery size $reads times over $painted painted '
           'frames. WDiv reads it for every h-full box and for a grid laid out '
-          'under unbounded width, through MediaQuery.of, which subscribes the '
-          'widget to EVERY MediaQuery change: a keyboard inset or a resize '
-          'rebuilds each one.',
+          'under unbounded width, through MediaQuery.sizeOf, which subscribes '
+          'the widget to the size aspect only: a resize or a rotation '
+          'rebuilds each one, not a keyboard inset.',
       metric: 'wind.inheritedReads.mediaQuerySize',
       value: reads,
       painted: painted,
       threshold: <String, Object?>{'minPerFrame': mediaQueryMinPerFrame},
       nextStep:
           'Find the repeated h-full boxes (or unbounded grids) and give '
-          'them a bounded parent or a fixed height, so the rows stop '
-          'depending on the screen size.',
+          'them a bounded parent or a fixed height, so a resize or a '
+          'rotation stops rebuilding each of them.',
     );
   }
 

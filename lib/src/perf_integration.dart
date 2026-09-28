@@ -12,6 +12,7 @@ import 'package:fluttersdk_dusk/dusk.dart'
         framePerfReader,
         perfExtrasReader,
         perfInsightContributors,
+        perfInteractionAt,
         perfSessionBeginHook,
         perfSessionEndHook,
         perfTimelineReader;
@@ -165,42 +166,82 @@ class MagicPerfIntegration {
   /// Which interaction the calling code belongs to, and how that was
   /// established, in dusk's order:
   ///
-  /// 1. `zone`: an open interaction read off `Zone.current`, for work a
-  ///    gesture started (its callbacks, and the timers, microtasks and
-  ///    streams they created).
-  /// 2. `frame`: dusk's active interaction, for work in the binding's frame
-  ///    zone that no zone reaches (a build, an `initState` refetch).
+  /// 1. `zone`: an interaction read off `Zone.current`, for work a gesture
+  ///    started (its callbacks, and the timers, microtasks and streams they
+  ///    created).
+  /// 2. `frame`: an interaction joined by time, for work in the binding's
+  ///    frame zone that no zone reaches (a build, an `initState` refetch).
   /// 3. `window`: no interaction; the work belongs to the session window only.
   ///
   /// Every telescope record and every sink row this package writes is stamped
   /// with it, so one rule decides all of them.
-  static ({String? interactionId, String linkedBy}) interactionLink() {
-    final String? zoned = zoneInteractionId(
+  ///
+  /// [startUs] is when the work BEGAN, for a span that is only reported when
+  /// it ends (a query reload, an action, an event dispatch). Resolving such a
+  /// span at its end asks the wrong question: a reload that outlives the tap
+  /// that started it would find the tap closed and drop it, and one that ends
+  /// during the next tap would take that tap's zone. With it, the zone handle
+  /// is accepted when its window `[startUs, closedAtUs ?? now]` holds the
+  /// start, closed or not, and otherwise dusk's `perfInteractionAt` names the
+  /// interaction whose window does (`frame`). The active slot is not consulted:
+  /// it answers for now, not for [startUs].
+  ///
+  /// With no [startUs] the work is an instant, and the rules are the older
+  /// ones: only an OPEN zone handle counts, then the active interaction.
+  static ({String? interactionId, String linkedBy}) interactionLink({
+    int? startUs,
+  }) {
+    final ({String id, int startUs, int? closedAtUs})? zoned = zoneInteraction(
       Zone.current[PerfInteraction.zoneKey],
     );
-    if (zoned != null) return (interactionId: zoned, linkedBy: 'zone');
+    if (zoned != null && _holds(zoned, startUs)) {
+      return (interactionId: zoned.id, linkedBy: 'zone');
+    }
 
-    final String? active = activeInteractionId();
-    if (active != null) return (interactionId: active, linkedBy: 'frame');
+    final String? joined = startUs == null
+        ? activeInteractionId()
+        : interactionIdAt(startUs);
+    if (joined != null) return (interactionId: joined, linkedBy: 'frame');
 
     return (interactionId: null, linkedBy: 'window');
   }
 
-  /// The id of an OPEN interaction held as a zone value, or null.
+  /// Whether [handle] owns the work that began at [startUs].
   ///
-  /// A closed handle is absent: timers and stream subscriptions created in
-  /// the zone keep the handle forever, and without the check every later
-  /// message on a socket opened during a tap would be attributed to that tap.
+  /// A closed handle is absent for an instant: timers and stream subscriptions
+  /// created in the zone keep the handle forever, and without the check every
+  /// later message on a socket opened during a tap would be attributed to that
+  /// tap. A span that began inside the window is different, since it really
+  /// did start there.
+  static bool _holds(
+    ({String id, int startUs, int? closedAtUs}) handle,
+    int? startUs,
+  ) {
+    if (startUs == null) return handle.closedAtUs == null;
+
+    return startUs >= handle.startUs &&
+        startUs <= (handle.closedAtUs ?? FlutterTimeline.now);
+  }
+
+  /// The window of an interaction held as a zone value, or null when the value
+  /// is not one.
   ///
   /// Replaceable only because dusk's `PerfInteraction` has a private
   /// constructor: a host test cannot open a real one without driving a perf
   /// session over the VM Service, so it substitutes what counts as a handle.
   @visibleForTesting
-  static String? Function(Object? zoneValue) zoneInteractionId =
-      _duskZoneInteractionId;
+  static ({String id, int startUs, int? closedAtUs})? Function(
+    Object? zoneValue,
+  )
+  zoneInteraction = _duskZoneInteraction;
+
+  /// The id of the interaction whose window holds [us], or null. Replaceable
+  /// for the reason given on [zoneInteraction].
+  @visibleForTesting
+  static String? Function(int us) interactionIdAt = _duskInteractionIdAt;
 
   /// The id of dusk's active interaction, or null. Replaceable for the reason
-  /// given on [zoneInteractionId].
+  /// given on [zoneInteraction].
   @visibleForTesting
   static String? Function() activeInteractionId = _duskActiveInteractionId;
 
@@ -237,7 +278,8 @@ class MagicPerfIntegration {
     _routeTransitions.clear();
     MagicPerfHooks.sink = null;
     perfInsightContributors.remove(_contributeInsights);
-    zoneInteractionId = _duskZoneInteractionId;
+    zoneInteraction = _duskZoneInteraction;
+    interactionIdAt = _duskInteractionIdAt;
     activeInteractionId = _duskActiveInteractionId;
     _watcher?.uninstall();
     _watcher = null;
@@ -259,8 +301,17 @@ class MagicPerfIntegration {
     }
   }
 
-  static String? _duskZoneInteractionId(Object? zoneValue) =>
-      zoneValue is PerfInteraction && zoneValue.isOpen ? zoneValue.id : null;
+  static ({String id, int startUs, int? closedAtUs})? _duskZoneInteraction(
+    Object? zoneValue,
+  ) => zoneValue is PerfInteraction
+      ? (
+          id: zoneValue.id,
+          startUs: zoneValue.startUs,
+          closedAtUs: zoneValue.closedAtUs,
+        )
+      : null;
+
+  static String? _duskInteractionIdAt(int us) => perfInteractionAt(us)?.id;
 
   static String? _duskActiveInteractionId() => activeInteraction()?.id;
 
@@ -484,8 +535,15 @@ class _MagicPerfSession {
       _bump(casts, event.castType);
       return;
     }
+    // A span is reported when it ends, so it is linked from when it began.
+    final int? spanStartUs = switch (event) {
+      QueryReloaded(:final int startUs) => startUs,
+      ActionRan(:final int startUs) => startUs,
+      EventDispatched(:final int startUs) => startUs,
+      _ => null,
+    };
     final ({String? interactionId, String linkedBy}) link =
-        MagicPerfIntegration.interactionLink();
+        MagicPerfIntegration.interactionLink(startUs: spanStartUs);
 
     switch (event) {
       case ControllerNotified(:final MagicController controller, :final cause):

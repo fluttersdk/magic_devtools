@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show FrameTiming, PlatformDispatcher, TimingsCallback;
 
 import 'package:flutter/material.dart';
@@ -113,6 +114,49 @@ Future<void> _warmTheParseCache(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   WindPerfCounters.reset();
 }
+
+/// Stands in for dusk's `PerfInteraction`, whose constructor is private to
+/// dusk: a host test cannot open a real one without driving a perf session over
+/// the VM Service. Carries the same window (`startUs`, `closedAtUs`) the real
+/// handle does, which is all the span link reads.
+class _FakeHandle {
+  const _FakeHandle(this.id, {required this.startUs, this.closedAtUs});
+
+  final String id;
+
+  final int startUs;
+
+  final int? closedAtUs;
+}
+
+/// Points the two seams `interactionLink` resolves a span through at
+/// [_FakeHandle]: the zone value, and dusk's `perfInteractionAt` over [log].
+/// The lookup is the same rule dusk applies: newest window holding the time.
+void _useFakeHandles({List<_FakeHandle> log = const <_FakeHandle>[]}) {
+  MagicPerfIntegration.zoneInteraction = (Object? value) => value is _FakeHandle
+      ? (id: value.id, startUs: value.startUs, closedAtUs: value.closedAtUs)
+      : null;
+  MagicPerfIntegration.interactionIdAt = (int us) {
+    for (final _FakeHandle handle in log.reversed) {
+      if (us >= handle.startUs && us <= (handle.closedAtUs ?? us)) {
+        return handle.id;
+      }
+    }
+    return null;
+  };
+}
+
+/// Delivers [event] to the sink the way magic does, from inside [handle]'s
+/// zone: the zone a timer or a request created during a gesture keeps.
+void _emitInZone(_FakeHandle handle, MagicPerfEvent event) => runZoned(
+  () => MagicPerfHooks.emit(event),
+  zoneValues: <Object?, Object?>{#fluttersdk_interaction: handle},
+);
+
+/// The one trace row on [track], asserting there is exactly one.
+Map<String, Object?> _rowOn(String track) => perfTimelineReader().singleWhere(
+  (Map<String, Object?> r) => r['track'] == track,
+);
 
 void main() {
   setUpAll(() {
@@ -425,6 +469,70 @@ void main() {
     });
   });
 
+  group('span interaction links', () {
+    // A closed at 5000, B still open. Times are FlutterTimeline microseconds.
+    const _FakeHandle a = _FakeHandle('i1', startUs: 1000, closedAtUs: 5000);
+    const _FakeHandle b = _FakeHandle('i2', startUs: 6000);
+
+    setUp(() {
+      MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
+      _useFakeHandles(log: <_FakeHandle>[a, b]);
+    });
+
+    test('a reload that outlives its interaction\'s close still links zone '
+        'to that interaction', () {
+      // Started at 2000, inside A's window, and finished at 9000, four
+      // seconds after A settled: resolving at the end would call A absent.
+      _emitInZone(a, QueryReloaded(_AlphaController, 2000, 9000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row['interactionId'], 'i1');
+      expect(row['linkedBy'], 'zone');
+    });
+
+    test('a reload started during A and ended during B links to A, not to '
+        'the zone handle it ended in', () {
+      _emitInZone(b, QueryReloaded(_AlphaController, 2000, 7000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row['interactionId'], 'i1');
+      expect(row['linkedBy'], 'frame');
+    });
+
+    test('an action and an event resolve from their start the same way', () {
+      _emitInZone(
+        b,
+        ActionRan(
+          _AlphaController,
+          2000,
+          7000,
+          const ActionSucceeded<Object?>(null),
+        ),
+      );
+      _emitInZone(b, EventDispatched(_BetaController, 1, 2500, 7000));
+
+      expect(_rowOn('magic.action')['interactionId'], 'i1');
+      expect(_rowOn('magic.event')['interactionId'], 'i1');
+    });
+
+    test('a span that began outside every window links by window', () {
+      _emitInZone(b, QueryReloaded(_AlphaController, 500, 7000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row.containsKey('interactionId'), isFalse);
+      expect(row['linkedBy'], 'window');
+    });
+
+    test('an instant with no start time still needs an OPEN zone handle', () {
+      _emitInZone(a, TimerTicked(_AlphaController));
+
+      final Map<String, Object?> row = _rowOn('magic.timer');
+      expect(row.containsKey('interactionId'), isFalse);
+      expect(row['linkedBy'], 'window');
+    });
+  });
+
   group('MagicPerfIntegration.resetForTesting', () {
     test('restores the sink, the counters and every pointer', () {
       final int contributors = perfInsightContributors.length;
@@ -458,7 +566,7 @@ void main() {
       expect(perfTimelineReader(), isEmpty);
       expect(perfInsightContributors, hasLength(contributors));
       expect(
-        MagicPerfIntegration.zoneInteractionId(Object()),
+        MagicPerfIntegration.zoneInteraction(Object()),
         isNull,
         reason: 'only a real open dusk interaction counts as a zone handle',
       );
