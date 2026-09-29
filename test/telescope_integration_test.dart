@@ -92,11 +92,11 @@ class _CapturingNetworkDriver implements NetworkDriver {
   }) => throw UnimplementedError();
 }
 
-MagicRequest _req(String url, {String method = 'GET'}) =>
-    MagicRequest(url: url, method: method);
+MagicRequest _req(String url, {String method = 'GET', int? id}) =>
+    MagicRequest(url: url, method: method, id: id);
 
-MagicResponse _ok({int statusCode = 200}) =>
-    MagicResponse(data: <String, dynamic>{}, statusCode: statusCode);
+MagicResponse _ok({int statusCode = 200, int? id}) =>
+    MagicResponse(data: <String, dynamic>{}, statusCode: statusCode, id: id);
 
 /// Stands in for dusk's `PerfInteraction`, whose constructor is private to
 /// dusk: a host test has no way to open a real one outside a perf session
@@ -215,6 +215,30 @@ void main() {
 
       interceptor.onResponse(_ok(statusCode: 204));
       expect(adapter.pendingCount, equals(0));
+    });
+
+    test('an answer without an id never takes a request that has one', () {
+      // It used to take the oldest request in flight whatever that was. When
+      // that was a real request with an id, its own answer then found nothing
+      // to pair with and was dropped, and the id-less answer was recorded
+      // against the wrong URL.
+      TelescopeStore.resetForTesting();
+      adapter.install();
+      final interceptor = driver.interceptors.first;
+
+      interceptor.onRequest(_req('/real', id: 7));
+      interceptor.onRequest(_req('/hand-built'));
+      interceptor.onResponse(_ok(statusCode: 201));
+      interceptor.onResponse(_ok(id: 7));
+
+      final Map<String, HttpRequestRecord> byUrl = <String, HttpRequestRecord>{
+        for (final HttpRequestRecord r in TelescopeStore.recentHttp()) r.url: r,
+      };
+      expect(byUrl['/hand-built']?.statusCode, 201);
+      expect(byUrl['/hand-built']?.attributedHeuristically, isTrue);
+      expect(byUrl['/real']?.statusCode, 200);
+      expect(byUrl['/real']?.requestId, '7');
+      expect(adapter.pendingCount, 0);
     });
 
     test(

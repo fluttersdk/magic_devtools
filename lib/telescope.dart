@@ -13,11 +13,11 @@
 /// boot errors:
 ///
 /// ```dart
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   TelescopePlugin.install();
 /// }
 /// await Magic.init(configFactories: [...]);
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   MagicTelescopeIntegration.install();
 /// }
 /// ```

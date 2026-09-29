@@ -27,7 +27,7 @@
 
 `magic_devtools` is the Magic adapter layer for [`fluttersdk_dusk`](https://pub.dev/packages/fluttersdk_dusk) and [`fluttersdk_telescope`](https://pub.dev/packages/fluttersdk_telescope). It enriches dusk snapshots and telescope records with Magic-aware context (forms, navigation, controllers, gates, auth, broadcasting, HTTP) so an LLM agent or CI driver sees your app the way Magic sees it.
 
-It is **debug-only**: you install and wire it under `kDebugMode`, so release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core; the framework keeps no dev-tooling production dependencies.
+It is **dev-only**: you install and wire it under `!kReleaseMode`, so debug and profile builds carry it (a performance measurement needs a profile build) and release builds tree-shake it entirely and it carries no runtime cost in production. This is exactly why it lives outside `magic` core; the framework keeps no dev-tooling production dependencies.
 
 Four import barrels:
 
@@ -38,7 +38,7 @@ Four import barrels:
 
 ## Install
 
-`magic_devtools` and the tooling packages are imported in `lib/main.dart` (under `kDebugMode`), so they are regular `dependencies`, not `dev_dependencies`; `kDebugMode` tree-shakes them out of release builds, and because `lib/` imports them a `dev_dependencies` entry would trip the `depend_on_referenced_packages` lint. This matches how `fluttersdk_dusk` and `fluttersdk_telescope` are installed on their own.
+`magic_devtools` and the tooling packages are imported in `lib/main.dart` (under `!kReleaseMode`), so they are regular `dependencies`, not `dev_dependencies`; `!kReleaseMode` tree-shakes them out of release builds, and because `lib/` imports them a `dev_dependencies` entry would trip the `depend_on_referenced_packages` lint. This matches how `fluttersdk_dusk` and `fluttersdk_telescope` are installed on their own.
 
 ```yaml
 dependencies:
@@ -55,12 +55,12 @@ Both integrations are debug-only and run in `lib/main.dart`. The ordering is loa
 
 ### Both tools at once (recommended)
 
-`MagicDevtools` collapses the four blocks below into the two halves of that ordering. Keep the `kDebugMode` guard at the call site: moving it inside the methods would make the call live in release and defeat the tree-shake.
+`MagicDevtools` collapses the four blocks below into the two halves of that ordering. Keep the `!kReleaseMode` guard at the call site: moving it inside the methods would make the call live in release and defeat the tree-shake.
 
 ```dart
-if (kDebugMode) MagicDevtools.installPre();   // dusk + telescope plugins + exception/dump watchers
+if (!kReleaseMode) MagicDevtools.installPre();   // dusk + telescope plugins + exception/dump watchers
 await Magic.init(configFactories: [...]);
-if (kDebugMode) MagicDevtools.installPost();  // MagicTelescopeIntegration + MagicDuskIntegration
+if (!kReleaseMode) MagicDevtools.installPost();  // MagicTelescopeIntegration + MagicDuskIntegration
 ```
 
 Reach for the individual barrels below when you need only one tool, or a non-standard telescope watcher set (register extra watchers with `TelescopePlugin.registerWatcher` after `installPre`).
@@ -72,11 +72,11 @@ Reach for the individual barrels below when you need only one tool, or a non-sta
 ### Dusk
 
 ```dart
-if (kDebugMode) {
+if (!kReleaseMode) {
   DuskPlugin.install();
 }
 await Magic.init(configFactories: [...]);
-if (kDebugMode) {
+if (!kReleaseMode) {
   MagicDuskIntegration.install();
 }
 ```
@@ -84,11 +84,11 @@ if (kDebugMode) {
 ### Telescope
 
 ```dart
-if (kDebugMode) {
+if (!kReleaseMode) {
   TelescopePlugin.install();
 }
 await Magic.init(configFactories: [...]);
-if (kDebugMode) {
+if (!kReleaseMode) {
   MagicTelescopeIntegration.install();
 }
 ```

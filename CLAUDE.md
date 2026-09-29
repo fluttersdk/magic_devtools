@@ -14,7 +14,8 @@ live in magic; moving them out is what lets a production app depend on magic wit
 driver and a runtime inspector into its resolution graph. Every consumer adds this package as a
 **dev_dependency**, never a dependency.
 
-That is also why every install call is guarded by `kDebugMode` AT THE CALL SITE, in the consumer's
+That is also why every install call is guarded by `!kReleaseMode` AT THE CALL SITE (debug and profile
+builds carry the tools, so a perf measurement runs on a profile build), in the consumer's
 `main.dart`, and never inside a method here. Moving the guard inward defeats the release tree-shake and
 pulls both tools into the production bundle, which is the one failure this package's whole shape is
 arranged to prevent.
@@ -110,7 +111,7 @@ throws.
 3. `CHANGELOG.md` gets a bullet under `## [Unreleased]` for every behavioural or interface change.
 4. Never add a dependency that would let magic core reach dusk or telescope. The direction is
    `magic_devtools` to the tools, never the reverse.
-5. Never move a `kDebugMode` guard inside this package.
+5. Never move a `!kReleaseMode` guard inside this package.
 
 ## Branching
 

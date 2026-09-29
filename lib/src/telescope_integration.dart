@@ -11,7 +11,7 @@ import 'perf_integration.dart';
 ///
 /// Host integration (debug-only):
 /// ```dart
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   TelescopePlugin.install();
 ///   MagicTelescopeIntegration.install();
 /// }
@@ -175,8 +175,9 @@ class MagicHttpFacadeAdapter implements TelescopeHttpAdapter {
 /// Pairs each answer with its request by the id the driver stamps on
 /// [MagicRequest.id] and carries onto [MagicResponse.id] / [MagicError.id],
 /// so two requests completing out of order keep their own URL and duration.
-/// Only an answer without an id (an `Http.fake` response, a hand-built one)
-/// falls back to the oldest request in flight, and that record says so with
+/// Only an answer without an id (a hand-built one; `Http.fake` installs no
+/// interceptors, so its traffic never reaches this one) falls back to the
+/// oldest id-less request in flight, and that record says so with
 /// `attributedHeuristically: true`.
 class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
   /// Set to true by [MagicHttpFacadeAdapter.uninstall] ; drops every
@@ -234,7 +235,9 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
   }
 
   /// 1. Take the request this answer belongs to: by [id], or the oldest in
-  ///    flight when the answer carries none.
+  ///    flight that carries no id either when the answer has none. A request
+  ///    with an id is never handed to an id-less answer: its own answer
+  ///    would then find nothing to pair with and be dropped.
   /// 2. Time it on the monotonic clock the rest of the trace uses.
   /// 3. Push a HttpRequestRecord into the store.
   void _record({
@@ -243,9 +246,7 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
     required bool isError,
     required String? responseBody,
   }) {
-    final int index = id == null
-        ? (_pending.isEmpty ? -1 : 0)
-        : _pending.indexWhere((_InFlight p) => p.id == id);
+    final int index = _pending.indexWhere((_InFlight p) => p.id == id);
     // An id nothing is waiting for: its request went out before install.
     if (index == -1) return;
     final _InFlight pending = _pending.removeAt(index);

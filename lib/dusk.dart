@@ -13,11 +13,11 @@
 /// live during Magic boot:
 ///
 /// ```dart
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   DuskPlugin.install();
 /// }
 /// await Magic.init(configFactories: [...]);
-/// if (kDebugMode) {
+/// if (!kReleaseMode) {
 ///   MagicDuskIntegration.install();
 /// }
 /// ```

@@ -26,7 +26,8 @@ export 'perf_integration.dart';
 ///   snapshot enrichers resolve dependencies through the IoC container
 ///   (`Magic.find` / `Magic.bound`).
 ///
-/// Keep both calls inside a `kDebugMode` guard AT THE CALL SITE. Do not move
+/// Keep both calls inside a `!kReleaseMode` guard AT THE CALL SITE (debug and
+/// profile builds carry the tools; release tree-shakes them). Do not move
 /// the guard inside these methods: a live (unguarded) call defeats the
 /// release tree-shake and pulls dusk + telescope into the production bundle,
 /// which is the whole reason this wiring lives outside `magic` core.
@@ -35,11 +36,11 @@ export 'perf_integration.dart';
 /// void main() async {
 ///   WidgetsFlutterBinding.ensureInitialized();
 ///
-///   if (kDebugMode) MagicDevtools.installPre();
+///   if (!kReleaseMode) MagicDevtools.installPre();
 ///
 ///   await Magic.init(configFactories: [...]);
 ///
-///   if (kDebugMode) MagicDevtools.installPost();
+///   if (!kReleaseMode) MagicDevtools.installPost();
 ///
 ///   runApp(const MyApp());
 /// }
