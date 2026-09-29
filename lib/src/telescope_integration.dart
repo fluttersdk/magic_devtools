@@ -46,6 +46,15 @@ class MagicTelescopeIntegration {
   /// Idempotent install. Safe to call multiple times within the same
   /// isolate lifetime.
   static void install() {
+    // magic's AuthInterceptor writes the bearer token under whatever header
+    // `auth.token.header` names; the store only knows the default names, so
+    // a renamed header would reach the agent-facing buffer in the clear.
+    // Ahead of the guard because a store reset drops the addition while
+    // this integration stays installed.
+    TelescopeRedaction.hideRequestHeaders(<String>[
+      Config.get<String>('auth.token.header', 'Authorization') ??
+          'Authorization',
+    ]);
     if (_installed) return;
     _installed = true;
     TelescopePlugin.registerHttpAdapter(MagicHttpFacadeAdapter());
@@ -202,7 +211,7 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
         startedAt: DateTime.now(),
         startUs: FlutterTimeline.now,
         requestHeaders: _stringHeaders(request.headers),
-        requestBody: _truncate(request.data),
+        requestBody: _truncate(_redactRequestBody(request.data)),
         interactionId: link.interactionId,
         linkedBy: link.linkedBy,
       ),
@@ -217,7 +226,7 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
       id: response.id,
       statusCode: response.statusCode,
       isError: response.failed,
-      responseBody: _truncate(response.data),
+      responseBody: _truncate(_redactResponseBody(response.data)),
     );
     return response;
   }
@@ -229,7 +238,8 @@ class _TelescopeNetworkInterceptor extends MagicNetworkInterceptor {
       id: error.id,
       statusCode: error.statusCode,
       isError: true,
-      responseBody: error.message ?? _truncate(error.response?.data),
+      responseBody:
+          error.message ?? _truncate(_redactResponseBody(error.response?.data)),
     );
     return error;
   }
@@ -310,6 +320,24 @@ Map<String, String>? _stringHeaders(Map<String, dynamic> raw) {
   }
   return out;
 }
+
+/// Mask the credential keys of a request body before [_truncate] cuts
+/// and stringifies it.
+///
+/// Neither a Dart structure's `toString()` nor a cut JSON string parses, so
+/// the store's own JSON masking could not see the body afterwards. Returns
+/// a masked copy: the driver sends on the very object the interceptor saw,
+/// so masking in place would send the mask to the server.
+Object? _redactRequestBody(Object? data) =>
+    _redactBody(data, TelescopeRedaction.hiddenRequestParameters);
+
+/// [_redactRequestBody] against the response list.
+Object? _redactResponseBody(Object? data) =>
+    _redactBody(data, TelescopeRedaction.hiddenResponseParameters);
+
+Object? _redactBody(Object? data, Set<String> keys) => data is String
+    ? TelescopeRedaction.redactBody(data, keys)
+    : TelescopeRedaction.redactParameters(data, keys);
 
 /// Render an arbitrary request/response body into the bounded string
 /// [HttpRequestRecord] expects. Truncates at 8 KB to keep the ring

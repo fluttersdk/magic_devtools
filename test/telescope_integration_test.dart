@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -461,6 +462,180 @@ void main() {
       expect(bySql['select * from here']!.linkedBy, 'zone');
       expect(bySql['select * from next']!.interactionId, 'i4');
       expect(bySql['select * from next']!.linkedBy, 'frame');
+    });
+  });
+
+  group('HTTP credential redaction', () {
+    late HttpServer server;
+    HttpOverrides? bindingOverrides;
+    Object? received;
+
+    setUp(() async {
+      // A testWidgets case in this file installs an HttpClient override that
+      // answers every request 400; these cases need the real loopback socket.
+      bindingOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      MagicApp.reset();
+      Magic.flush();
+      Log.fake();
+      Vault.fake();
+      Magic.singleton('auth', AuthManager.new);
+      // AuthManager caches its guards process-wide; a token stored by one
+      // test would otherwise ride along on the next.
+      Auth.manager.forgetGuards();
+      TelescopeStore.resetForTesting();
+      MagicTelescopeIntegration.resetForTesting();
+      MagicPerfIntegration.resetForTesting();
+      received = null;
+
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((HttpRequest request) async {
+        received = jsonDecode(await utf8.decoder.bind(request).join());
+        request.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write('{"data":{"token":"sanctum-token","user":{"id":1}}}');
+        await request.response.close();
+      });
+    });
+
+    tearDown(() async {
+      await server.close(force: true);
+      HttpOverrides.global = bindingOverrides;
+      Config.set('auth', <String, dynamic>{});
+      Vault.unfake();
+      Log.unfake();
+      TelescopeStore.resetForTesting();
+      MagicTelescopeIntegration.resetForTesting();
+      MagicPerfIntegration.resetForTesting();
+      MagicApp.reset();
+      Magic.flush();
+    });
+
+    /// Signs in with `sanctum-token` and posts a login body through a driver
+    /// that carries magic's own AuthInterceptor ahead of telescope's, the
+    /// order an app boots them in.
+    Future<HttpRequestRecord> login() async {
+      final DioNetworkDriver driver = DioNetworkDriver(
+        baseUrl: 'http://127.0.0.1:${server.port}',
+      )..addInterceptor(AuthInterceptor());
+      Magic.singleton('network', () => driver);
+      MagicTelescopeIntegration.install();
+      await (Auth.guard() as BaseGuard).storeToken('sanctum-token');
+
+      await driver.post(
+        '/login',
+        data: <String, dynamic>{'email': 'a@b.test', 'password': 'hunter2'},
+      );
+
+      return TelescopeStore.recentHttp().single;
+    }
+
+    String? header(HttpRequestRecord record, String name) => record
+        .requestHeaders
+        ?.entries
+        .firstWhere(
+          (MapEntry<String, String> entry) =>
+              entry.key.toLowerCase() == name.toLowerCase(),
+        )
+        .value;
+
+    test('a login stores neither the password, the token nor the bearer '
+        'header, and the server still receives the real body', () async {
+      final HttpRequestRecord record = await login();
+
+      expect(
+        received,
+        equals(<String, dynamic>{'email': 'a@b.test', 'password': 'hunter2'}),
+      );
+      expect(header(record, 'Authorization'), equals('********'));
+      expect(record.requestBody, contains('a@b.test'));
+      final String stored = jsonEncode(record.toJson());
+      expect(stored, isNot(contains('hunter2')));
+      expect(stored, isNot(contains('sanctum-token')));
+    });
+
+    test('the header auth.token.header names is masked too', () async {
+      Config.set('auth.token.header', 'X-Auth');
+
+      final HttpRequestRecord record = await login();
+
+      expect(header(record, 'X-Auth'), equals('********'));
+      expect(jsonEncode(record.toJson()), isNot(contains('sanctum-token')));
+      expect(TelescopeRedaction.hiddenRequestHeaders, contains('x-auth'));
+    });
+
+    test('an error answer is masked with the response list, and the request '
+        'body the driver sends on is left untouched', () {
+      final _CapturingNetworkDriver driver = _CapturingNetworkDriver();
+      Magic.bind('network', () => driver);
+      MagicHttpFacadeAdapter().install();
+      final MagicNetworkInterceptor interceptor = driver.interceptors.single;
+      final Map<String, dynamic> body = <String, dynamic>{
+        'password': 'hunter2',
+      };
+
+      interceptor.onRequest(
+        MagicRequest(url: '/login', method: 'POST', data: body, id: 1),
+      );
+      interceptor.onError(
+        MagicError(
+          response: MagicResponse(
+            data: <String, dynamic>{
+              'data': <String, dynamic>{'token': 't0k'},
+            },
+            statusCode: 500,
+            id: 1,
+          ),
+        ),
+      );
+
+      expect(body['password'], equals('hunter2'));
+      final HttpRequestRecord record = TelescopeStore.recentHttp().single;
+      expect(record.requestBody, isNot(contains('hunter2')));
+      expect(record.responseBody, isNot(contains('t0k')));
+      expect(record.responseBody, contains('********'));
+    });
+
+    test('a JSON string body is masked before it is cut to size', () {
+      final _CapturingNetworkDriver driver = _CapturingNetworkDriver();
+      Magic.bind('network', () => driver);
+      MagicHttpFacadeAdapter().install();
+      final MagicNetworkInterceptor interceptor = driver.interceptors.single;
+
+      interceptor.onRequest(
+        MagicRequest(
+          url: '/login',
+          method: 'POST',
+          data: jsonEncode(<String, dynamic>{
+            'password': 'hunter2',
+            'padding': 'x' * 9000,
+          }),
+          id: 1,
+        ),
+      );
+      interceptor.onResponse(
+        MagicResponse(
+          data: '{"token":"t0k","padding":"${'x' * 9000}"}',
+          statusCode: 200,
+          id: 1,
+        ),
+      );
+
+      final HttpRequestRecord record = TelescopeStore.recentHttp().single;
+      expect(record.requestBody, contains('[truncated'));
+      expect(record.requestBody, isNot(contains('hunter2')));
+      expect(record.responseBody, isNot(contains('t0k')));
+    });
+
+    test('install() hides the auth header again after the store was reset', () {
+      Config.set('auth.token.header', 'X-Auth');
+      MagicTelescopeIntegration.install();
+
+      TelescopeStore.resetForTesting();
+      MagicTelescopeIntegration.install();
+
+      expect(TelescopeRedaction.hiddenRequestHeaders, contains('x-auth'));
     });
   });
 }

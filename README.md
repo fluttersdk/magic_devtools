@@ -33,7 +33,7 @@ Four import barrels:
 
 - `package:magic_devtools/magic_devtools.dart`: `MagicDevtools` is the umbrella one-call wiring: `installPre()` boots both tool plugins (plus telescope's opt-in exception/dump watchers) before `Magic.init()`, `installPost()` wires both Magic integrations after it.
 - `package:magic_devtools/dusk.dart`: `MagicDuskIntegration` registers 14 Magic-aware enrichers into fluttersdk_dusk's snapshot pipeline.
-- `package:magic_devtools/telescope.dart`: `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope.
+- `package:magic_devtools/telescope.dart`: `MagicTelescopeIntegration` registers 5 Magic watchers and `MagicHttpFacadeAdapter` into fluttersdk_telescope. The adapter masks credentials before a record reaches the agent-facing buffer: `password` / `token` style keys of a request or response body and the header `auth.token.header` names (default `Authorization`) read `********`.
 - `package:magic_devtools/preview.dart`: `MagicPreview` hosts a dev-only component preview catalog via two plain pages (`/preview` and `/preview/:component`), tree-shaken from release builds.
 
 ## Install
