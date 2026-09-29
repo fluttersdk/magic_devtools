@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-29
+
 ### Security
 
 - **The HTTP adapter no longer hands telescope a login's password or token.** It stringified request and response bodies with `toString()`, and a Dart `Map` prints as `{email: a@b.test, password: hunter2}`, which telescope's JSON masking cannot read, so a login body and a Sanctum login answer reached the agent-facing buffer in the clear. `onRequest`, `onResponse` and `onError` now mask the body with telescope's hidden request or response parameters before truncating it (`TelescopeRedaction.redactParameters` for a Dart structure, `redactBody` for a JSON string, which would otherwise stop parsing once cut at 8 KB); the masked copy is what gets recorded, and the request object the driver sends on is never touched. `MagicTelescopeIntegration.install()` also hides the header magic's `AuthInterceptor` writes the token under, read from `auth.token.header` (default `Authorization`), so a renamed header is masked too, and it does so on every call, since a telescope store reset drops the addition. Needs the telescope release that ships `TelescopeRedaction`. (`lib/src/telescope_integration.dart`)
