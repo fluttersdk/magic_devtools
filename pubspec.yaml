@@ -12,10 +12,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^0.0.22
-  fluttersdk_dusk: ^0.0.16
-  fluttersdk_telescope: ^0.0.7
-  fluttersdk_wind: ^1.7.0
+  magic: ^0.0.24
+  fluttersdk_dusk: ^0.0.17
+  fluttersdk_telescope: ^0.0.9
+  fluttersdk_wind: ^1.8.0
 
 dev_dependencies:
   flutter_test:
