@@ -2,7 +2,7 @@
 ///
 /// Exposes [MagicDevtools], the one-call `installPre` / `installPost` wiring
 /// for fluttersdk_dusk and fluttersdk_telescope plus their Magic
-/// integrations, installed around [Magic.init] under `kDebugMode`.
+/// integrations, installed around [Magic.init] under `!kReleaseMode`.
 ///
 /// See the finer-grained `dusk.dart`, `telescope.dart`, and `preview.dart`
 /// barrels when you need direct access to a single integration, a

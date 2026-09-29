@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'dart:ui' show FrameTiming, PlatformDispatcher, TimingsCallback;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluttersdk_dusk/dusk.dart'
     show
+        PerfMode,
         framePerfReader,
         perfExtrasReader,
+        perfInsightContributors,
         perfSessionBeginHook,
-        perfSessionEndHook;
+        perfSessionEndHook,
+        perfTimelineReader;
 import 'package:fluttersdk_telescope/telescope.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_devtools/magic_devtools.dart';
@@ -73,7 +77,7 @@ FramePerfRecord _frameRecord(int frameNumber) => FramePerfRecord(
   vsyncOverheadMicros: 1000,
   totalSpanMicros: 7000,
   time: DateTime(2026, 8, 25),
-  blocks: const <String, ({int micros, int count})>{},
+  blocks: const <String, ({int micros, int selfMicros, int count})>{},
 );
 
 /// Moves wind's counters the way the app does: by building a real W-widget.
@@ -110,6 +114,49 @@ Future<void> _warmTheParseCache(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   WindPerfCounters.reset();
 }
+
+/// Stands in for dusk's `PerfInteraction`, whose constructor is private to
+/// dusk: a host test cannot open a real one without driving a perf session over
+/// the VM Service. Carries the same window (`startUs`, `closedAtUs`) the real
+/// handle does, which is all the span link reads.
+class _FakeHandle {
+  const _FakeHandle(this.id, {required this.startUs, this.closedAtUs});
+
+  final String id;
+
+  final int startUs;
+
+  final int? closedAtUs;
+}
+
+/// Points the two seams `interactionLink` resolves a span through at
+/// [_FakeHandle]: the zone value, and dusk's `perfInteractionAt` over [log].
+/// The lookup is the same rule dusk applies: newest window holding the time.
+void _useFakeHandles({List<_FakeHandle> log = const <_FakeHandle>[]}) {
+  MagicPerfIntegration.zoneInteraction = (Object? value) => value is _FakeHandle
+      ? (id: value.id, startUs: value.startUs, closedAtUs: value.closedAtUs)
+      : null;
+  MagicPerfIntegration.interactionIdAt = (int us) {
+    for (final _FakeHandle handle in log.reversed) {
+      if (us >= handle.startUs && us <= (handle.closedAtUs ?? us)) {
+        return handle.id;
+      }
+    }
+    return null;
+  };
+}
+
+/// Delivers [event] to the sink the way magic does, from inside [handle]'s
+/// zone: the zone a timer or a request created during a gesture keeps.
+void _emitInZone(_FakeHandle handle, MagicPerfEvent event) => runZoned(
+  () => MagicPerfHooks.emit(event),
+  zoneValues: <Object?, Object?>{#fluttersdk_interaction: handle},
+);
+
+/// The one trace row on [track], asserting there is exactly one.
+Map<String, Object?> _rowOn(String track) => perfTimelineReader().singleWhere(
+  (Map<String, Object?> r) => r['track'] == track,
+);
 
 void main() {
   setUpAll(() {
@@ -170,6 +217,7 @@ void main() {
 
     test('attributes notify counts to each controller runtime type', () {
       MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
 
       final _AlphaController alpha = _AlphaController();
       final _BetaController beta = _BetaController();
@@ -223,19 +271,115 @@ void main() {
       expect(payload['livenessCounter'], isA<int>());
     });
 
-    test('perfExtrasReader returns the notify counts', () {
+    test('perfExtrasReader returns exactly dusk\'s documented key set', () {
       MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
       _AlphaController().refreshUI();
 
       final Map<String, Object?> payload = perfExtrasReader();
+      // dusk ignores an unknown key rather than failing the report, so a
+      // renamed key would read as an empty section; pinned here instead.
       expect(
         payload.keys,
-        unorderedEquals(<String>['controllerNotifies', 'routeTransitions']),
+        unorderedEquals(<String>[
+          'controllerNotifies',
+          'notifyCauses',
+          'queryReloads',
+          'actions',
+          'events',
+          'casts',
+          'timerTicks',
+          'broadcasts',
+          'routeTransitions',
+        ]),
       );
       expect(payload['controllerNotifies'], <String, int>{
         '_AlphaController': 1,
       });
+      expect(payload['notifyCauses'], <String, int>{'direct': 1});
       expect(payload['routeTransitions'], isEmpty);
+    });
+
+    test('a timing session installs no sink and leaves wind counting off', () {
+      MagicPerfIntegration.install();
+
+      perfSessionBeginHook(PerfMode.timing);
+      _AlphaController().refreshUI();
+
+      expect(MagicPerfHooks.sink, isNull);
+      expect(WindPerfCounters.enabled, isFalse);
+      expect(MagicPerfIntegration.controllerNotifyCounts, isEmpty);
+    });
+
+    test('the end hook removes the sink', () {
+      MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
+      expect(MagicPerfHooks.sink, isNotNull);
+
+      perfSessionEndHook();
+      _AlphaController().refreshUI();
+
+      expect(MagicPerfHooks.sink, isNull);
+      expect(MagicPerfIntegration.controllerNotifyCounts, <String, int>{});
+    });
+
+    test('perfTimelineReader carries sink rows and telescope records in '
+        'dusk\'s row schema, stamped with their link', () {
+      MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
+      _AlphaController().refreshUI();
+      MagicPerfHooks.emit(QueryReloaded(_AlphaController, 100, 250, false));
+      TelescopeStore.recordHttp(
+        HttpRequestRecord(
+          url: 'https://api.test/monitors?page=1',
+          method: 'GET',
+          statusCode: 200,
+          durationMs: 3,
+          isError: false,
+          timestamp: DateTime(2026, 9, 28),
+          requestId: '7',
+          startUs: 1000,
+          endUs: 4000,
+          interactionId: 'i1',
+          linkedBy: 'zone',
+        ),
+      );
+
+      final List<Map<String, Object?>> rows = perfTimelineReader();
+      final Map<String, Object?> notify = rows.firstWhere(
+        (Map<String, Object?> r) => r['track'] == 'magic.notify',
+      );
+      expect(notify['kind'], 'instant');
+      expect(notify['name'], '_AlphaController');
+      expect(notify['linkedBy'], 'window');
+      expect(notify['startUs'], isA<int>());
+
+      final Map<String, Object?> query = rows.firstWhere(
+        (Map<String, Object?> r) => r['track'] == 'magic.query',
+      );
+      expect(query['kind'], 'span');
+      expect(query['startUs'], 100);
+      expect(query['endUs'], 250);
+      expect(query['id'], isNotNull);
+
+      final Map<String, Object?> http = rows.firstWhere(
+        (Map<String, Object?> r) => r['track'] == 'http',
+      );
+      expect(http['name'], 'GET /monitors');
+      expect(http['id'], 'http-7');
+      expect(http['startUs'], 1000);
+      expect(http['endUs'], 4000);
+      expect(http['interactionId'], 'i1');
+      expect(http['linkedBy'], 'zone');
+    });
+
+    test('install appends one insight contributor, however often it runs', () {
+      final int before = perfInsightContributors.length;
+
+      MagicPerfIntegration.install();
+      MagicPerfIntegration.install();
+
+      expect(perfInsightContributors, hasLength(before + 1));
     });
 
     testWidgets('perfExtrasReader carries a named, timed route transition', (
@@ -283,8 +427,10 @@ void main() {
       );
 
       MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
       _AlphaController().refreshUI();
-      perfSessionBeginHook();
+      expect(MagicPerfIntegration.controllerNotifyCounts, isNotEmpty);
+      perfSessionBeginHook(PerfMode.attribution);
 
       expect(WindPerfCounters.cacheHits, 0);
       expect(TelescopeStore.recentFramePerf(), isEmpty);
@@ -306,7 +452,7 @@ void main() {
       MagicPerfIntegration.install();
       expect(WindPerfCounters.enabled, isFalse);
 
-      perfSessionBeginHook();
+      perfSessionBeginHook(PerfMode.attribution);
 
       // Zeroing without enabling would report a wind section of all zeros
       // beside populated frame and magic sections, with no error to say why.
@@ -323,17 +469,82 @@ void main() {
     });
   });
 
-  group('MagicPerfIntegration.resetForTesting', () {
-    test('restores the hook, the counters and all four pointers', () {
+  group('span interaction links', () {
+    // A closed at 5000, B still open. Times are FlutterTimeline microseconds.
+    const _FakeHandle a = _FakeHandle('i1', startUs: 1000, closedAtUs: 5000);
+    const _FakeHandle b = _FakeHandle('i2', startUs: 6000);
+
+    setUp(() {
       MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
+      _useFakeHandles(log: <_FakeHandle>[a, b]);
+    });
+
+    test('a reload that outlives its interaction\'s close still links zone '
+        'to that interaction', () {
+      // Started at 2000, inside A's window, and finished at 9000, four
+      // seconds after A settled: resolving at the end would call A absent.
+      _emitInZone(a, QueryReloaded(_AlphaController, 2000, 9000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row['interactionId'], 'i1');
+      expect(row['linkedBy'], 'zone');
+    });
+
+    test('a reload started during A and ended during B links to A, not to '
+        'the zone handle it ended in', () {
+      _emitInZone(b, QueryReloaded(_AlphaController, 2000, 7000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row['interactionId'], 'i1');
+      expect(row['linkedBy'], 'frame');
+    });
+
+    test('an action and an event resolve from their start the same way', () {
+      _emitInZone(
+        b,
+        ActionRan(
+          _AlphaController,
+          2000,
+          7000,
+          const ActionSucceeded<Object?>(null),
+        ),
+      );
+      _emitInZone(b, EventDispatched(_BetaController, 1, 2500, 7000));
+
+      expect(_rowOn('magic.action')['interactionId'], 'i1');
+      expect(_rowOn('magic.event')['interactionId'], 'i1');
+    });
+
+    test('a span that began outside every window links by window', () {
+      _emitInZone(b, QueryReloaded(_AlphaController, 500, 7000, false));
+
+      final Map<String, Object?> row = _rowOn('magic.query');
+      expect(row.containsKey('interactionId'), isFalse);
+      expect(row['linkedBy'], 'window');
+    });
+
+    test('an instant with no start time still needs an OPEN zone handle', () {
+      _emitInZone(a, TimerTicked(_AlphaController));
+
+      final Map<String, Object?> row = _rowOn('magic.timer');
+      expect(row.containsKey('interactionId'), isFalse);
+      expect(row['linkedBy'], 'window');
+    });
+  });
+
+  group('MagicPerfIntegration.resetForTesting', () {
+    test('restores the sink, the counters and every pointer', () {
+      final int contributors = perfInsightContributors.length;
+      MagicPerfIntegration.install();
+      perfSessionBeginHook(PerfMode.attribution);
       _AlphaController().refreshUI();
-      perfSessionBeginHook();
       TelescopeStore.recordFramePerf(_frameRecord(5));
 
       MagicPerfIntegration.resetForTesting();
 
       expect(MagicPerfIntegration.isInstalled, isFalse);
-      expect(MagicController.onRefreshUI, isNull);
+      expect(MagicPerfHooks.sink, isNull);
       expect(MagicPerfIntegration.controllerNotifyCounts, isEmpty);
       // A reset that left counting on would tax every later test in the suite.
       expect(WindPerfCounters.enabled, isFalse);
@@ -343,12 +554,26 @@ void main() {
       });
       expect(perfExtrasReader(), <String, Object?>{
         'controllerNotifies': <String, int>{},
+        'notifyCauses': <String, int>{},
+        'queryReloads': <String, int>{},
+        'actions': <String, int>{},
+        'events': <String, int>{},
+        'casts': <String, int>{},
+        'timerTicks': <String, int>{},
+        'broadcasts': <String, int>{},
         'routeTransitions': <Map<String, Object?>>[],
       });
+      expect(perfTimelineReader(), isEmpty);
+      expect(perfInsightContributors, hasLength(contributors));
+      expect(
+        MagicPerfIntegration.zoneInteraction(Object()),
+        isNull,
+        reason: 'only a real open dusk interaction counts as a zone handle',
+      );
 
       // The restored hooks are no-ops: the frame buffer survives the begin
       // hook and counting stays off after the end hook.
-      perfSessionBeginHook();
+      perfSessionBeginHook(PerfMode.attribution);
       perfSessionEndHook();
       expect(TelescopeStore.recentFramePerf(), hasLength(1));
       expect(WindPerfCounters.enabled, isFalse);
