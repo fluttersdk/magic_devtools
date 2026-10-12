@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-10-13
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.27` to `^0.0.28`, `fluttersdk_dusk` `^0.0.19` to `^0.0.20`, `fluttersdk_telescope` `^0.0.10` to `^0.0.12` and `fluttersdk_wind` `^1.8.1` to `^1.8.4`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. None of magic 0.0.28, dusk 0.0.20, telescope 0.0.11 and 0.0.12 or wind 1.8.2 to 1.8.4 is breaking for this package: dusk 0.0.20 and telescope 0.0.12 only move to artisan 0.0.20, whose connected commands print one retry line and exit 75 when an extension is not registered yet; wind 1.8.2 restores the click cursor under `hover:`, which the preview catalogue's navigation rows use, and 1.8.3 adds `autofillHints`, which this package does not call. The README install snippet quotes the new devtools, dusk and telescope pins. (`pubspec.yaml`, `README.md`)
+
 ## [0.0.9] - 2026-10-09
 
 ### Changed
