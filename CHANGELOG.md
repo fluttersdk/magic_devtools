@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-10-14
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.28` to `^0.0.29` and `fluttersdk_wind` `^1.8.4` to `^1.9.0`; `fluttersdk_dusk` stays at `^0.0.20` and `fluttersdk_telescope` at `^0.0.12`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. magic 0.0.29 adds two abstract members to `BroadcastChannel` and a `webOnlyWindowName` named parameter to `LaunchAdapter.launch()`, and this package implements neither; wind 1.9.0 makes `tracking-*` em, scaled by the rendered font size, and this package writes no `tracking-*` class. The README install snippet quotes the new devtools pin. (`pubspec.yaml`, `README.md`)
+
 ## [0.0.10] - 2026-10-13
 
 ### Changed
